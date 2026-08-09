@@ -1,0 +1,2088 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Violet Mango — 2.5D FDTD EM Simulator</title>
+<style>
+:root{
+  --bg:#0b0c10;
+  --panel:#14161d;
+  --panel2:#1b1e27;
+  --line:#2a2e3a;
+  --text:#e7e6ea;
+  --dim:#8b8fa3;
+  --violet:#9b6bff;
+  --violet-dim:#5d4499;
+  --mango:#ffab3d;
+  --mango-dim:#a86e26;
+  --good:#5ed6a8;
+  --bad:#ff6b6b;
+  --mono: "JetBrains Mono", "SFMono-Regular", ui-monospace, Consolas, monospace;
+  --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+*{box-sizing:border-box;}
+html,body{height:100%;}
+body{
+  margin:0; background:var(--bg); color:var(--text); font-family:var(--sans);
+  font-size:13px; overflow:hidden;
+  background-image:
+    linear-gradient(rgba(155,107,255,0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(155,107,255,0.035) 1px, transparent 1px);
+  background-size:28px 28px;
+}
+#app{display:flex; flex-direction:column; height:100vh;}
+header{
+  display:flex; align-items:center; gap:14px; padding:10px 18px;
+  background:linear-gradient(180deg, var(--panel), var(--bg));
+  border-bottom:1px solid var(--line); flex:0 0 auto;
+}
+.logo{display:flex; align-items:baseline; gap:8px; font-weight:700; font-size:17px; letter-spacing:0.2px;}
+.logo .v{color:var(--violet);}
+.logo .m{color:var(--mango);}
+.logo .tag{font-weight:400; font-size:11px; color:var(--dim); font-family:var(--mono); margin-left:4px;}
+nav.tabs{display:flex; gap:4px; margin-left:24px;}
+nav.tabs button{
+  background:transparent; border:1px solid transparent; color:var(--dim);
+  padding:7px 14px; border-radius:7px; cursor:pointer; font-size:12.5px; font-weight:600;
+  font-family:var(--sans); letter-spacing:0.3px;
+}
+nav.tabs button:hover{ color:var(--text); background:var(--panel2); }
+nav.tabs button.active{ color:var(--bg); background:var(--violet); }
+.spacer{flex:1;}
+.pill{font-family:var(--mono); font-size:11px; color:var(--dim); padding:4px 10px; border:1px solid var(--line); border-radius:20px;}
+main{flex:1; display:flex; min-height:0;}
+.view{display:none; width:100%; height:100%;}
+.view.active{display:flex;}
+
+/* ---- Common panel styling ---- */
+.sidebar{width:340px; flex:0 0 340px; background:var(--panel); border-right:1px solid var(--line); overflow-y:auto; padding:14px;}
+.canvas-wrap{flex:1; position:relative; background:radial-gradient(ellipse at 50% 40%, #101219 0%, #0a0b0f 70%); overflow:hidden; display:flex; align-items:center; justify-content:center;}
+h3.section{font-size:11px; text-transform:uppercase; letter-spacing:1.2px; color:var(--mango); margin:18px 0 8px; font-weight:700;}
+h3.section:first-child{margin-top:2px;}
+.field{margin-bottom:9px;}
+.field label{display:block; font-size:11px; color:var(--dim); margin-bottom:3px;}
+.field input[type=number], .field input[type=text], .field select{
+  width:100%; background:var(--bg); border:1px solid var(--line); color:var(--text);
+  padding:6px 8px; border-radius:6px; font-family:var(--mono); font-size:12px;
+}
+.field input:focus, .field select:focus{ outline:none; border-color:var(--violet); }
+.row2{display:grid; grid-template-columns:1fr 1fr; gap:8px;}
+.row3{display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px;}
+button.btn{
+  background:var(--panel2); border:1px solid var(--line); color:var(--text);
+  padding:7px 12px; border-radius:7px; cursor:pointer; font-size:12px; font-weight:600; font-family:var(--sans);
+}
+button.btn:hover{ border-color:var(--violet); }
+button.btn.primary{ background:var(--violet); border-color:var(--violet); color:#0b0c10; }
+button.btn.primary:hover{ background:#a97dff; }
+button.btn.mango{ background:var(--mango); border-color:var(--mango); color:#0b0c10; }
+button.btn.mango:hover{ background:#ffbb5e; }
+button.btn.danger{ color:var(--bad); }
+button.btn.small{ padding:4px 8px; font-size:11px; }
+button.btn:disabled{ opacity:0.4; cursor:not-allowed; }
+label.chk{display:flex; align-items:center; gap:6px; font-size:12px; color:var(--dim); cursor:pointer;}
+
+/* ---- Geometry tab ---- */
+.toolbar{display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px;}
+.toolbar button{
+  background:var(--panel2); border:1px solid var(--line); color:var(--dim);
+  padding:6px 9px; border-radius:6px; cursor:pointer; font-size:11px; font-family:var(--mono);
+}
+.toolbar button.active{ background:var(--violet-dim); color:#fff; border-color:var(--violet); }
+.hint{font-size:11px; color:var(--dim); background:var(--bg); border:1px dashed var(--line); border-radius:6px; padding:8px; margin-bottom:10px; line-height:1.5;}
+.objlist{display:flex; flex-direction:column; gap:6px;}
+.objcard{ background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:8px 10px; cursor:pointer; }
+.objcard.selected{ border-color:var(--mango); }
+.objcard .oh{ display:flex; justify-content:space-between; align-items:center; font-size:12px; font-weight:700; }
+.objcard .oh .tag{ font-family:var(--mono); font-size:10px; color:var(--dim); font-weight:400;}
+.objcard .obody{ margin-top:6px; display:none; }
+.objcard.selected .obody{ display:block; }
+#matCanvas, #srcCanvas, #vizCanvas{ background:#0a0b0f; }
+.zoomctl{ position:absolute; bottom:14px; right:14px; display:flex; gap:6px; }
+.legend-swatch{ width:12px; height:12px; border-radius:3px; display:inline-block; margin-right:6px; vertical-align:-2px; }
+
+/* ---- Run tab ---- */
+.run-main{ flex:1; display:flex; flex-direction:column; padding:20px 26px; overflow-y:auto; }
+.progress-wrap{ background:var(--panel2); border:1px solid var(--line); border-radius:10px; padding:16px 18px; margin:14px 0; }
+.progress-bar{ height:10px; background:var(--bg); border-radius:6px; overflow:hidden; border:1px solid var(--line); }
+.progress-bar > div{ height:100%; background:linear-gradient(90deg, var(--violet), var(--mango)); width:0%; transition:width 0.15s; }
+.stat-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-top:12px; }
+.stat{ background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:10px 12px; }
+.stat .k{ font-size:10px; color:var(--dim); text-transform:uppercase; letter-spacing:0.6px; }
+.stat .v{ font-family:var(--mono); font-size:16px; margin-top:3px; color:var(--mango); }
+#runLog{ flex:1; background:#08090c; border:1px solid var(--line); border-radius:8px; padding:10px 12px; font-family:var(--mono); font-size:11.5px; color:var(--good); overflow-y:auto; margin-top:14px; min-height:120px; white-space:pre-wrap; }
+
+/* ---- Visualize tab ---- */
+.viz-controls{ display:flex; flex-wrap:wrap; align-items:flex-end; gap:14px; padding:12px 18px; background:var(--panel); border-bottom:1px solid var(--line); }
+.viz-controls .field{ margin:0; min-width:130px; }
+.playbar{ position:absolute; left:14px; right:14px; bottom:14px; background:rgba(20,22,29,0.9); border:1px solid var(--line); border-radius:10px; padding:10px 14px; display:flex; align-items:center; gap:10px; backdrop-filter:blur(6px); }
+.playbar input[type=range]{ flex:1; accent-color:var(--violet); }
+.colorbar{ position:absolute; top:14px; right:14px; width:26px; height:220px; border:1px solid var(--line); border-radius:6px; overflow:hidden; }
+.colorbar-label{ position:absolute; top:14px; right:48px; height:220px; display:flex; flex-direction:column; justify-content:space-between; font-family:var(--mono); font-size:10px; color:var(--dim); text-align:right; padding:2px 0;}
+
+/* ---- Export tab ---- */
+.export-main{ flex:1; padding:26px; display:flex; gap:20px; flex-wrap:wrap; align-content:flex-start; }
+.expcard{ width:300px; background:var(--panel2); border:1px solid var(--line); border-radius:12px; padding:18px; }
+.expcard h4{ margin:0 0 8px; font-size:14px; }
+.expcard p{ color:var(--dim); font-size:12px; line-height:1.5; margin:0 0 14px; }
+
+/* ---- Help / Legal tabs ---- */
+.doc-main{ flex:1; overflow-y:auto; display:flex; justify-content:center; padding:30px 20px 60px; }
+.doc-content{ max-width:760px; width:100%; }
+.doc-banner{
+  display:flex; align-items:center; gap:10px; background:linear-gradient(90deg, rgba(155,107,255,0.15), rgba(255,171,61,0.12));
+  border:1px solid var(--violet-dim); border-radius:10px; padding:12px 16px; margin-bottom:26px; font-size:13px;
+}
+.doc-banner b{ color:var(--mango); }
+.doc-content h2{ font-size:20px; margin:0 0 6px; color:var(--text); }
+.doc-content .doc-sub{ color:var(--dim); font-size:12.5px; margin-bottom:24px; }
+.doc-content h3{ font-size:14px; color:var(--mango); text-transform:uppercase; letter-spacing:0.8px; margin:30px 0 10px; border-bottom:1px solid var(--line); padding-bottom:6px; }
+.doc-content h4{ font-size:13px; color:var(--violet); margin:18px 0 6px; }
+.doc-content p{ font-size:13px; line-height:1.7; color:#c9c8d0; margin:0 0 12px; }
+.doc-content ul, .doc-content ol{ font-size:13px; line-height:1.7; color:#c9c8d0; margin:0 0 12px; padding-left:22px; }
+.doc-content li{ margin-bottom:4px; }
+.doc-content code{ font-family:var(--mono); background:var(--bg); border:1px solid var(--line); border-radius:4px; padding:1px 5px; font-size:12px; color:var(--good); }
+.doc-eq{
+  font-family:var(--mono); font-size:12.5px; line-height:1.9; background:#08090c; border:1px solid var(--line);
+  border-radius:8px; padding:14px 18px; margin:10px 0 16px; color:#d7d6e0; overflow-x:auto; white-space:pre;
+}
+.doc-eq .c{ color:var(--dim); }
+.doc-content table{ width:100%; border-collapse:collapse; font-size:12.5px; margin:10px 0 16px; }
+.doc-content th, .doc-content td{ text-align:left; padding:6px 10px; border-bottom:1px solid var(--line); }
+.doc-content th{ color:var(--mango); font-weight:600; }
+.doc-content hr{ border:none; border-top:1px solid var(--line); margin:34px 0; }
+
+
+::-webkit-scrollbar{ width:9px; height:9px; }
+::-webkit-scrollbar-thumb{ background:var(--line); border-radius:6px; }
+::-webkit-scrollbar-track{ background:transparent; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="logo"><span class="v">Violet</span><span class="m">Mango</span><span class="tag">2.5D FDTD SOLVER</span><span class="tag" id="verBadge" style="margin-left:0;"></span></div>
+    <nav class="tabs">
+      <button data-tab="materials" class="active">Materials</button>
+      <button data-tab="sources">Sources</button>
+      <button data-tab="run">Run</button>
+      <button data-tab="visualize">Visualize</button>
+      <button data-tab="export">Export</button>
+      <button data-tab="help">Help</button>
+      <button data-tab="legal">Legal</button>
+    </nav>
+    <div class="spacer"></div>
+    <div class="pill" id="gridSummary">grid —</div>
+  </header>
+
+  <main>
+    <!-- ============ MATERIALS TAB ============ -->
+    <section class="view active" id="view-materials">
+      <div class="sidebar">
+        <h3 class="section">Grid &amp; Domain</h3>
+        <div class="field"><label>Frequency (GHz)</label><input type="number" id="p_freq" step="0.01" value="2.4"></div>
+        <div class="row2">
+          <div class="field"><label>Domain width (mm)</label><input type="number" id="p_w" step="1" value="200"></div>
+          <div class="field"><label>Domain height (mm)</label><input type="number" id="p_h" step="1" value="200"></div>
+        </div>
+        <div class="row2">
+          <div class="field"><label>Cells / wavelength</label><input type="number" id="p_cpw" step="1" value="20"></div>
+          <div class="field"><label>Grid plane Z (mm)</label><input type="number" id="p_z" step="1" value="0"></div>
+        </div>
+        <div class="row2">
+          <div class="field"><label>Origin shift X (mm)</label><input type="number" id="p_cx" step="1" value="0"></div>
+          <div class="field"><label>Origin shift Y (mm)</label><input type="number" id="p_cy" step="1" value="0"></div>
+        </div>
+
+        <h3 class="section">Surface Primitives <span style="color:var(--dim); font-weight:400;">(open curves, w/ thickness)</span></h3>
+        <div class="toolbar" id="toolbarMatSurface">
+          <button data-tool="select" class="active">Select</button>
+          <button data-tool="line">Line</button>
+          <button data-tool="arc">Circular Arc</button>
+          <button data-tool="earc">Elliptical Arc</button>
+          <button data-tool="parc">Parabolic Arc</button>
+          <button data-tool="spline">Spline</button>
+          <button data-tool="func">ƒ(x)</button>
+        </div>
+        <h3 class="section">Closed Region Primitives <span style="color:var(--dim); font-weight:400;">(filled area)</span></h3>
+        <div class="toolbar" id="toolbarMatRegion">
+          <button data-tool="select" class="active">Select</button>
+          <button data-tool="triangle">Triangle</button>
+          <button data-tool="circle">Circle</button>
+          <button data-tool="ellipse">Ellipse</button>
+        </div>
+        <div class="hint" id="toolHintMat">Click "Select" to pick &amp; edit a material region. Use the shape tools to draw dielectric/conductor regions. Press <b>Enter</b> to finish a spline, <b>Esc</b> to cancel a draw.</div>
+
+        <h3 class="section">Materials <span style="color:var(--dim); font-weight:400;">(<span id="matCount">0</span>)</span></h3>
+        <div class="objlist" id="matList"></div>
+      </div>
+      <div class="canvas-wrap">
+        <canvas id="matCanvas" width="900" height="900"></canvas>
+        <div class="zoomctl">
+          <button class="btn small" id="zoomOutMat">−</button>
+          <button class="btn small" id="zoomFitMat">Fit</button>
+          <button class="btn small" id="zoomInMat">+</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ SOURCES TAB ============ -->
+    <section class="view" id="view-sources">
+      <div class="sidebar">
+        <h3 class="section">Source Tools</h3>
+        <div class="toolbar" id="toolbarSrc">
+          <button data-tool="select" class="active">Select</button>
+          <button data-tool="dipole">+ Dipole</button>
+          <button data-tool="wire">+ Wire</button>
+          <button data-tool="loop">+ Loop</button>
+        </div>
+        <div class="hint" id="toolHintSrc">Click "Select" to pick &amp; edit a source. Use the source tools to place current sources — full 3D position, projected onto the grid plane. Materials are shown faint for reference.</div>
+
+        <h3 class="section">Sources <span style="color:var(--dim); font-weight:400;">(<span id="srcCount">0</span>)</span></h3>
+        <div class="objlist" id="srcList"></div>
+      </div>
+      <div class="canvas-wrap">
+        <canvas id="srcCanvas" width="900" height="900"></canvas>
+        <div class="zoomctl">
+          <button class="btn small" id="zoomOutSrc">−</button>
+          <button class="btn small" id="zoomFitSrc">Fit</button>
+          <button class="btn small" id="zoomInSrc">+</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ RUN TAB ============ -->
+    <section class="view" id="view-run">
+      <div class="sidebar">
+        <h3 class="section">PML Boundary</h3>
+        <div class="row2">
+          <div class="field"><label>PML thickness (cells)</label><input type="number" id="p_pml" value="12" min="4"></div>
+          <div class="field"><label>PML grading order (m)</label><input type="number" id="p_pmlm" value="3" min="1"></div>
+        </div>
+        <h3 class="section">Time Stepping</h3>
+        <div class="field"><label>CFL factor (0–1)</label><input type="number" id="p_cfl" value="0.98" step="0.01" min="0.1" max="0.999"></div>
+        <div class="row2">
+          <div class="field"><label>Max cycles</label><input type="number" id="p_maxcycles" value="30" min="1"></div>
+          <div class="field"><label>Steps / cycle (auto)</label><input type="number" id="p_stepspercycle" value="" disabled></div>
+        </div>
+        <div class="field"><label>Convergence threshold (ΔA/A)</label><input type="number" id="p_conv" value="0.001" step="0.0001"></div>
+        <label class="chk"><input type="checkbox" id="p_convEnable" checked> Enable early stop on convergence</label>
+
+        <h3 class="section">Far-Field Transform</h3>
+        <div class="field"><label>Huygens surface margin (cells inside PML)</label><input type="number" id="p_ffmargin" value="4" min="1"></div>
+        <div class="field"><label>Angular resolution (degrees)</label><input type="number" id="p_ffres" value="1" step="0.5" min="0.1"></div>
+      </div>
+      <div class="run-main">
+        <div style="display:flex; align-items:center; gap:12px;">
+          <button class="btn primary" id="runBtn" style="font-size:14px; padding:11px 22px;">▶ Run Simulation</button>
+          <button class="btn danger" id="stopBtn" disabled>■ Stop</button>
+          <div class="spacer"></div>
+          <span class="pill" id="runStatus">idle</span>
+        </div>
+        <div class="progress-wrap">
+          <div class="progress-bar"><div id="progressFill"></div></div>
+          <div class="stat-grid">
+            <div class="stat"><div class="k">Cycle</div><div class="v" id="statCycle">0 / 0</div></div>
+            <div class="stat"><div class="k">Timestep</div><div class="v" id="statStep">0</div></div>
+            <div class="stat"><div class="k">Convergence ΔA/A</div><div class="v" id="statConv">—</div></div>
+            <div class="stat"><div class="k">Elapsed</div><div class="v" id="statTime">0.0s</div></div>
+          </div>
+        </div>
+        <div id="runLog"></div>
+      </div>
+    </section>
+
+    <!-- ============ VISUALIZE TAB ============ -->
+    <section class="view" id="view-visualize" style="flex-direction:column;">
+      <div class="viz-controls">
+        <div class="field">
+          <label>Field / Quantity</label>
+          <select id="v_field">
+            <optgroup label="Electric field (complex)">
+              <option value="Ex">Ex</option><option value="Ey">Ey</option><option value="Ez" selected>Ez</option>
+            </optgroup>
+            <optgroup label="Magnetic field (complex)">
+              <option value="Hx">Hx</option><option value="Hy">Hy</option><option value="Hz">Hz</option>
+            </optgroup>
+            <optgroup label="Vector magnitude (real)">
+              <option value="Emag">|E|</option>
+              <option value="Hmag">|H|</option>
+            </optgroup>
+            <optgroup label="Power flux — Poynting (real)">
+              <option value="Sx">Sx</option><option value="Sy">Sy</option><option value="Sz">Sz</option><option value="Smag">|S|</option>
+            </optgroup>
+          </select>
+        </div>
+        <div class="field">
+          <label>Function</label>
+          <select id="v_func">
+            <option value="re">Re</option>
+            <option value="im">Im</option>
+            <option value="arg_rad">Arg (rad)</option>
+            <option value="arg_deg">Arg (deg)</option>
+            <option value="abs" selected>Abs</option>
+            <option value="abs2">Abs²</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Source</label>
+          <select id="v_source">
+            <option value="phasor">Steady-state phasor</option>
+            <option value="frame">Time-history frame</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Colormap</label>
+          <select id="v_cmap">
+            <option value="viridis">Viridis</option>
+            <option value="rdbu">RdBu (diverging)</option>
+            <option value="mangoviolet" selected>Mango–Violet</option>
+            <option value="inferno">Inferno</option>
+            <option value="gray">Grayscale</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Scale</label>
+          <select id="v_scale">
+            <option value="linear" selected>Linear</option>
+            <option value="log">Log</option>
+            <option value="db">dB</option>
+          </select>
+        </div>
+        <div class="field"><label>Min</label><input type="number" id="v_min" step="any"></div>
+        <div class="field"><label>Max</label><input type="number" id="v_max" step="any"></div>
+        <div class="field">
+          <label>Far-field processing</label>
+          <select id="v_ffproc">
+            <option value="raw" selected>Relative Magnitude</option>
+            <option value="directivity">Approximate Directivity</option>
+          </select>
+        </div>
+        <label class="chk" style="margin-bottom:9px;"><input type="checkbox" id="v_auto" checked> Auto range</label>
+        <label class="chk" style="margin-bottom:9px;"><input type="checkbox" id="v_overlay"> Overlay far-field pattern</label>
+        <label class="chk" style="margin-bottom:9px;"><input type="checkbox" id="v_geo" checked> Show geometry outline</label>
+        <div class="spacer"></div>
+        <button class="btn" id="v_polarBtn">Show Polar Pattern</button>
+      </div>
+      <div class="canvas-wrap">
+        <canvas id="vizCanvas" width="900" height="900"></canvas>
+        <div class="colorbar" id="colorbar"></div>
+        <div class="colorbar-label" id="colorbarLabel"><span>max</span><span>0</span><span>min</span></div>
+        <div class="playbar" id="playbar" style="display:none;">
+          <button class="btn small" id="playBtn">▶</button>
+          <input type="range" id="playSlider" min="0" max="0" value="0">
+          <span class="pill" id="playLabel" style="min-width:80px; text-align:center;">t = 0</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ EXPORT TAB ============ -->
+    <section class="view" id="view-export">
+      <div class="export-main">
+        <div class="expcard">
+          <h4>📊 Export Results (JSON)</h4>
+          <p>Steady-state complex phasor fields (Ex,Ey,Ez,Hx,Hy,Hz), the far-field radiation pattern, and grid metadata — for further processing in Python / MATLAB / etc.</p>
+          <button class="btn mango" id="exportResultsBtn" disabled>Download results.json</button>
+        </div>
+        <div class="expcard">
+          <h4>💾 Save Project</h4>
+          <p>Full setup: geometry, materials, sources, grid and solver settings. Reload later to continue editing — does not include simulation results.</p>
+          <button class="btn primary" id="saveProjectBtn">Download project.json</button>
+        </div>
+        <div class="expcard">
+          <h4>📂 Load Project</h4>
+          <p>Restore a previously saved project.json — replaces the current geometry, sources, and settings.</p>
+          <input type="file" id="loadProjectInput" accept="application/json" style="display:none;">
+          <button class="btn" id="loadProjectBtn">Choose file…</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ HELP TAB ============ -->
+    <section class="view" id="view-help">
+      <div class="doc-main"><div class="doc-content">
+        <div class="doc-banner">📧 <span>For technical support contact: <b>Numerius.engineering@gmail.com</b></span></div>
+
+        <h2>Violet Mango — How the Solver Works</h2>
+        <div class="doc-sub">A 2.5D Finite-Difference Time-Domain (FDTD) electromagnetic solver, running entirely client-side.</div>
+
+        <h3>1. Overview</h3>
+        <p>Violet Mango simulates electromagnetic current sources on a single 2D computational grid (the "grid plane") that sits at a chosen height in 3D space. Rather than restricting the physics to a single polarization, the solver tracks <b>all six Cartesian field components</b> (Ex, Ey, Ez, Hx, Hy, Hz) by assuming the geometry and fields are <b>invariant along the axis perpendicular to the grid plane</b> — the same assumption used for 2D waveguide cross-sections and cylindrical antenna problems. This is what "2.5D" refers to: a 2D grid producing a fully 3D field vector at every point.</p>
+
+        <h3>2. Mode Decoupling (TMz / TEz)</h3>
+        <p>Because the fields don't vary along z (&part;/&part;z = 0), Maxwell's curl equations split cleanly into two independent sets:</p>
+        <div class="doc-eq"><span class="c">// TMz mode — driven by out-of-plane current Jz</span>
+fields: Ez, Hx, Hy
+
+<span class="c">// TEz mode — driven by in-plane current Jx, Jy</span>
+fields: Hz, Ex, Ey</span></div>
+        <p>These two modes do not exchange energy for isotropic materials, so the solver advances them simultaneously but independently on the same Yee grid. A source's orientation vector determines which mode(s) it excites: a purely out-of-plane dipole (dz only) drives TMz exclusively, a purely in-plane dipole (dx, dy) drives TEz exclusively, and a tilted dipole drives both — which is also why the out-of-plane Poynting component S<sub>z</sub> is only non-zero when both modes are simultaneously excited (it comes from the cross-product of one mode's E-field with the other mode's H-field).</p>
+
+        <h3>3. Update Equations</h3>
+        <p>The grid uses the standard Yee leapfrog scheme: H-fields are updated a half timestep ahead of E-fields, cell sizes are uniform (&Delta;x = &Delta;y = dx), and materials are approximated with the collocated-grid convention (one &epsilon;r/&mu;r/&sigma; value per cell, applied to every field component stored at that cell). With C0 the speed of light, &epsilon;0 and &mu;0 the vacuum permittivity/permeability, and dt the timestep:</p>
+        <div class="doc-eq"><span class="c">// Magnetic field updates (TMz)</span>
+Hx[i,j] -= (dt / (&mu;0&middot;&mu;r&middot;dy)) &middot; (Ez[i,j+1] - Ez[i,j])
+Hy[i,j] += (dt / (&mu;0&middot;&mu;r&middot;dx)) &middot; (Ez[i+1,j] - Ez[i,j])
+
+<span class="c">// Magnetic field update (TEz)</span>
+Hz[i,j] -= (dt/&mu;0&middot;&mu;r) &middot; [ (Ey[i+1,j]-Ey[i,j])/dx - (Ex[i,j+1]-Ex[i,j])/dy ]
+
+<span class="c">// Electric field update (TMz), with conductive loss + PEC clamp</span>
+Ez[i,j] = Ca&middot;Ez[i,j] + Cb&middot;[ (Hy[i,j]-Hy[i-1,j])/dx - (Hx[i,j]-Hx[i,j-1])/dy - Jz[i,j] ]
+
+<span class="c">// Electric field updates (TEz)</span>
+Ex[i,j] = Ca&middot;Ex[i,j] + Cb&middot;[ (Hz[i,j]-Hz[i,j-1])/dy - Jx[i,j] ]
+Ey[i,j] = Ca&middot;Ey[i,j] + Cb&middot;[ -(Hz[i,j]-Hz[i-1,j])/dx - Jy[i,j] ]
+
+<span class="c">// Loss coefficients, from conductivity &sigma; and permittivity &epsilon; = &epsilon;0&middot;&epsilon;r</span>
+Ca = (1 - &sigma;&middot;dt / 2&epsilon;) / (1 + &sigma;&middot;dt / 2&epsilon;)
+Cb = (dt/&epsilon;) / (1 + &sigma;&middot;dt / 2&epsilon;)</div>
+        <p>Cells flagged as a Perfect Electric Conductor (PEC) have every E-field component clamped to zero after each update, which is the standard "staircased PEC" approximation used throughout FDTD.</p>
+
+        <h4>Time step &amp; stability</h4>
+        <p>The timestep is chosen from the 2D Courant–Friedrichs–Lewy (CFL) stability limit, scaled by the user-configurable CFL factor (default 0.98, must be &lt; 1 for stability):</p>
+        <div class="doc-eq">dt = CFL_factor &middot; dx / (c &middot; &radic;2)</div>
+
+        <h4>Absorbing boundary (PML)</h4>
+        <p>The domain edges use a graded-conductivity absorbing layer: a polynomial-profile loss term &sigma;(depth) is added to the update coefficients within the PML region (matched between electric and magnetic loss so the layer is approximately impedance-matched to free space), ramping from 0 at the PML's inner edge to a maximum value at the outer domain boundary. This is a simplified, single-field approximation of a full Convolutional PML — effective at absorbing outgoing waves with modest reflection, though not as reflection-free as a split-field CPML implementation.</p>
+
+        <h3>4. Excitation &amp; Steady State</h3>
+        <p>All sources are single-frequency, continuous-wave (CW) sinusoids. The solver time-steps cycle by cycle, tracking the peak field amplitude at a monitor point each cycle. It stops early once the cycle-over-cycle amplitude change falls below the convergence threshold (if enabled), or after the configured maximum number of cycles. Once stopped, it runs one additional full period, during which it:</p>
+        <ul>
+          <li>Records field snapshots (for the time-history playback / animation), and</li>
+          <li>Accumulates a running discrete Fourier transform (DFT) at the excitation frequency, to extract the steady-state complex phasor fields (Ex, Ey, Ez, Hx, Hy, Hz) used for all "steady-state phasor" visualizations and the far-field transform.</li>
+        </ul>
+
+        <h3>5. Near-to-Far-Field Transform</h3>
+        <p>The far-field radiation pattern is computed from the phasor fields using the equivalence principle on a rectangular Huygens surface placed just inside the PML. Equivalent electric and magnetic surface currents are derived from the tangential fields on that contour:</p>
+        <div class="doc-eq">Js = n&#770; &times; H        <span class="c">(equivalent electric surface current)</span>
+Ms = -n&#770; &times; E       <span class="c">(equivalent magnetic surface current)</span></div>
+        <p>These currents are integrated around the contour with the appropriate far-field phase factor exp(jk&middot;r&#770;&middot;r&prime;) for each observation angle &phi;, separately for the TMz pattern (from Ez, Hx, Hy) and the TEz pattern (from Hz, Ex, Ey), producing the polar radiation pattern shown in the Visualize tab.</p>
+
+        <h4>Approximate Directivity</h4>
+        <p>Directivity is estimated by treating the far-field magnitude squared as proportional to radiation intensity, U(&phi;) &prop; pattern(&phi;)&sup2;, and normalizing by the total power integrated around the full circle — the 2D/cylindrical analogue of the standard 4&pi;-steradian directivity formula (using 2&pi; radians in place of 4&pi; steradians, consistent with this solver's z-invariant geometry):</p>
+        <div class="doc-eq">D(&phi;) = 2&pi; &middot; U(&phi;) / &int; U(&phi;) d&phi;</div>
+        <p>It's labeled "approximate" because it isn't impedance-calibrated to an absolute radiated-power reference — it's a relative measure derived purely from the shape of the computed pattern.</p>
+
+        <h3>6. Materials</h3>
+        <p>Material regions are rasterized onto the grid from geometric primitives, split into two families:</p>
+        <table>
+          <tr><th>Surface primitives (open curves, w/ thickness)</th><th>Closed-region primitives (filled area)</th></tr>
+          <tr><td>Line, Circular Arc, Elliptical Arc, Parabolic Arc, Spline, ƒ(x)</td><td>Triangle, Circle, Ellipse</td></tr>
+        </table>
+        <p>Each material carries relative permittivity &epsilon;r, relative permeability &mu;r, conductivity &sigma;, and an optional PEC flag (which overrides &epsilon;r/&mu;r/&sigma; with a perfect-conductor boundary condition). The elliptical arc uses the ellipse's native parametric angle convention; the parabolic arc is defined by vertex, focus, and aperture height, matching standard reflector-antenna convention.</p>
+
+        <h3>7. Sources</h3>
+        <p>Sources are defined in full 3D and projected onto the grid plane (a warning is shown if a source sits far from the plane's Z height). Three types are supported: point dipoles (with a 3D orientation vector), wire segments, and loops — the latter two support a spatial current taper (uniform or sinusoidal) along their length.</p>
+
+        <h3>8. Visualization</h3>
+        <p>Any of the six complex phasor components can be viewed through a selectable function: Re, Im, Arg (rad/deg), Abs, or Abs&sup2;. Derived real-valued quantities — |E|, |H|, and the Poynting vector components Sx, Sy, Sz, |S| — are also available. Color scales support linear, log, and dB modes with auto-ranging (dB auto-range fixes the floor 60&nbsp;dB below the computed peak) or fully manual min/max.</p>
+
+        <h3>9. Data Export</h3>
+        <p>Two independent JSON exports are available: a <b>results</b> export (steady-state phasor fields, far-field pattern and approximate directivity, and grid metadata) for downstream processing in Python/MATLAB/etc., and a <b>project</b> export (complete geometry, sources, and solver settings) for saving and reloading your setup.</p>
+      </div></div>
+    </section>
+
+    <!-- ============ LEGAL TAB ============ -->
+    <section class="view" id="view-legal">
+      <div class="doc-main"><div class="doc-content">
+        <h2>Legal</h2>
+        <div class="doc-sub">Violet Mango — 2.5D FDTD Electromagnetic Simulator &middot; <span id="verBadgeLegal"></span></div>
+
+        <h3>Copyright</h3>
+        <p>Copyright &copy; 2026 Numerius Engineering LLC. All rights reserved.</p>
+
+        <h3>License</h3>
+        <p>This software is distributed under the MIT License:</p>
+        <div class="doc-eq">Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to
+deal in the Software without restriction, including without limitation the
+rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.</div>
+
+        <h3>Disclaimer</h3>
+        <p>Violet Mango is provided for engineering exploration, prototyping, and educational use. Numerical results — including field solutions, far-field patterns, and directivity estimates — depend on the accuracy of the simplified absorbing-boundary, material-averaging, and near-to-far-field approximations described in the Help tab, and should be independently verified before use in any safety-critical, regulatory, or commercial design decision.</p>
+
+        <h3>Contact</h3>
+        <p>For technical support, licensing questions, or feedback, contact Numerius.engineering@gmail.com.</p>
+      </div></div>
+    </section>
+  </main>
+</div>
+
+<script>
+'use strict';
+/* =========================================================================
+   VIOLET MANGO — 2.5D FDTD Electromagnetic Simulator
+   Single-file application. Sections:
+     1. Constants & state
+     2. Geometry model + rasterization
+     3. Canvas drawing / interaction (Geometry tab)
+     4. Sidebar object list rendering
+     5. Run tab: worker orchestration
+     6. FDTD Worker source (string, run in a Blob Worker)
+     7. Visualize tab: colormaps + rendering + playback + polar pattern
+     8. Export / Save / Load
+   ========================================================================= */
+
+const C0 = 299792458;      // m/s
+const EPS0 = 8.8541878128e-12;
+const MU0 = 1.25663706212e-6;
+const Z0 = 376.730313668;
+
+// Single source of truth for the app version — read by the header badge,
+// the Legal tab, and stamped into every exported results/project JSON file.
+const APP_VERSION = '1.0.0';
+
+/* ---------------------------- 1. STATE ---------------------------- */
+const App = {
+  tab: 'materials',
+  tool: 'select',
+  project: {
+    grid: { freqGHz: 2.4, domainW: 200, domainH: 200, cellsPerWL: 20, planeZ: 0, centerX: 0, centerY: 0 },
+    solver: { pmlCells: 12, pmlM: 3, cfl: 0.98, maxCycles: 30, convThresh: 0.001, convEnable: true, ffMargin: 4, ffResDeg: 1 },
+    materials: [],
+    sources: []
+  },
+  selectedId: null,
+  draft: null,           // in-progress shape being drawn
+  view: { scale: 1, ox: 0, oy: 0 },  // canvas transform (world mm -> screen px)
+  results: null,          // populated after a run completes
+  worker: null,
+  running: false,
+  playing: false,
+  playTimer: null
+};
+let uidCounter = 1;
+function uid(){ return 'o' + (uidCounter++); }
+
+/* ---------------------------- helpers ---------------------------- */
+function $(id){ return document.getElementById(id); }
+function on(el, ev, fn){ el.addEventListener(ev, fn); }
+function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
+function fmt(v, d=3){ if (v===undefined||v===null||isNaN(v)) return '—'; return Number(v).toPrecision(d); }
+
+function wavelengthMM(freqGHz){ return (C0 / (freqGHz*1e9)) * 1000; }
+
+function deriveGrid(){
+  const g = App.project.grid;
+  const wl = wavelengthMM(g.freqGHz);
+  const dx = wl / g.cellsPerWL; // mm per cell
+  const pml = App.project.solver.pmlCells;
+  const nxCore = Math.max(10, Math.round(g.domainW/dx));
+  const nyCore = Math.max(10, Math.round(g.domainH/dx));
+  const Nx = nxCore + 2*pml;
+  const Ny = nyCore + 2*pml;
+  const dt = App.project.solver.cfl * dx*1e-3 / (C0*Math.sqrt(2)); // seconds; dx in mm->m
+  const period = 1/(g.freqGHz*1e9);
+  const stepsPerCycle = Math.max(4, Math.round(period/dt));
+  return { wl, dx, pml, nxCore, nyCore, Nx, Ny, dt, period, stepsPerCycle, centerX: g.centerX||0, centerY: g.centerY||0 };
+}
+
+function updateGridSummary(){
+  const gd = deriveGrid();
+  const originNote = (gd.centerX||gd.centerY) ? `  ·  origin shift (${fmt(gd.centerX,4)}, ${fmt(gd.centerY,4)})mm` : '';
+  $('gridSummary').textContent = `grid ${gd.Nx}×${gd.Ny}  ·  dx=${fmt(gd.dx,4)}mm  ·  λ=${fmt(gd.wl,4)}mm  ·  dt=${fmt(gd.dt*1e12,4)}ps${originNote}`;
+  $('p_stepspercycle').value = gd.stepsPerCycle;
+}
+
+/* ---------------------------- tabs ---------------------------- */
+document.querySelectorAll('nav.tabs button').forEach(btn=>{
+  on(btn,'click',()=>{
+    document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+    $('view-'+btn.dataset.tab).classList.add('active');
+    App.tab = btn.dataset.tab;
+    if (App.tab==='materials' || App.tab==='sources'){
+      resizeCanvases(); fitView(); drawGeoCanvas();
+    }
+    if (App.tab==='visualize') drawVizCanvas();
+  });
+});
+
+/* ---------------------------- grid param inputs ---------------------------- */
+['p_freq','p_w','p_h','p_cpw','p_z','p_cx','p_cy'].forEach(id=>{
+  on($(id),'input', ()=>{
+    App.project.grid.freqGHz = parseFloat($('p_freq').value)||2.4;
+    App.project.grid.domainW = parseFloat($('p_w').value)||200;
+    App.project.grid.domainH = parseFloat($('p_h').value)||200;
+    App.project.grid.cellsPerWL = parseFloat($('p_cpw').value)||20;
+    App.project.grid.planeZ = parseFloat($('p_z').value)||0;
+    App.project.grid.centerX = parseFloat($('p_cx').value)||0;
+    App.project.grid.centerY = parseFloat($('p_cy').value)||0;
+    updateGridSummary(); fitView(); drawGeoCanvas();
+  });
+});
+['p_pml','p_pmlm','p_cfl','p_maxcycles','p_conv','p_convEnable','p_ffmargin','p_ffres'].forEach(id=>{
+  on($(id), $(id).type==='checkbox' ? 'change':'input', ()=>{
+    const s = App.project.solver;
+    s.pmlCells = parseInt($('p_pml').value)||12;
+    s.pmlM = parseFloat($('p_pmlm').value)||3;
+    s.cfl = parseFloat($('p_cfl').value)||0.98;
+    s.maxCycles = parseInt($('p_maxcycles').value)||30;
+    s.convThresh = parseFloat($('p_conv').value)||0.001;
+    s.convEnable = $('p_convEnable').checked;
+    s.ffMargin = parseInt($('p_ffmargin').value)||4;
+    s.ffResDeg = parseFloat($('p_ffres').value)||1;
+    updateGridSummary();
+  });
+});
+
+/* =========================================================================
+   2. GEOMETRY MODEL + RASTERIZATION
+   ========================================================================= */
+// Materials primitive shapes: {id,type,...,epsR,muR,sigma,pec,label}
+// type: 'line','triangle','circle','ellipse','arc','spline','func'
+// Sources: {id,type:'dipole'|'wire'|'loop', x,y,z, ...}
+
+function defaultMaterial(type, pts){
+  const base = { id: uid(), type, epsR:1, muR:1, sigma:0, pec:false, thickness:2, label:type };
+  if (type==='line') return Object.assign(base,{x1:pts[0].x,y1:pts[0].y,x2:pts[1].x,y2:pts[1].y});
+  if (type==='triangle') return Object.assign(base,{x1:pts[0].x,y1:pts[0].y,x2:pts[1].x,y2:pts[1].y,x3:pts[2].x,y3:pts[2].y,pec:true});
+  if (type==='circle') return Object.assign(base,{cx:pts[0].x,cy:pts[0].y,r:Math.hypot(pts[1].x-pts[0].x,pts[1].y-pts[0].y),pec:true});
+  if (type==='ellipse') return Object.assign(base,{cx:pts[0].x,cy:pts[0].y,rx:Math.abs(pts[1].x-pts[0].x),ry:Math.abs(pts[1].y-pts[0].y),pec:true});
+  if (type==='arc') return Object.assign(base,{cx:pts[0].x,cy:pts[0].y,r:Math.hypot(pts[1].x-pts[0].x,pts[1].y-pts[0].y),a0:0,a1:180,thickness:3});
+  if (type==='earc') return Object.assign(base,{cx:pts[0].x,cy:pts[0].y,rx:Math.max(Math.abs(pts[1].x-pts[0].x),1),ry:Math.max(Math.abs(pts[1].y-pts[0].y),1),a0:0,a1:180,thickness:3});
+  if (type==='parc'){
+    const vx=pts[0].x, vy=pts[0].y, fx=pts[1].x, fy=pts[1].y;
+    const p = Math.hypot(fx-vx, fy-vy) || 1;
+    return Object.assign(base,{vx,vy,fx,fy,height:4*p,thickness:3});
+  }
+  if (type==='spline') return Object.assign(base,{points:pts.map(p=>({x:p.x,y:p.y})),thickness:2});
+  if (type==='func') return Object.assign(base,{expr:'20*sin(x/20)',xmin:-100,xmax:100,yoff:0,thickness:2});
+  return base;
+}
+function defaultSource(type, pts){
+  const g = App.project.grid;
+  const base = { id: uid(), type, amplitude:1, phaseDeg:0, z:g.planeZ, label:type };
+  if (type==='dipole') return Object.assign(base,{x:pts[0].x,y:pts[0].y,dx:0,dy:0,dz:1});
+  if (type==='wire') return Object.assign(base,{x1:pts[0].x,y1:pts[0].y,z1:g.planeZ,x2:pts[1].x,y2:pts[1].y,z2:g.planeZ,taper:'uniform',npts:12});
+  if (type==='loop') return Object.assign(base,{x:pts[0].x,y:pts[0].y,radius:Math.hypot(pts[1].x-pts[0].x,pts[1].y-pts[0].y),nx:0,ny:0,nz:1,taper:'uniform',npts:16});
+  return base;
+}
+
+// point-in-shape / distance-to-shape tests (world mm coords)
+function distToSeg(px,py,x1,y1,x2,y2){
+  const dx=x2-x1, dy=y2-y1; const len2=dx*dx+dy*dy;
+  let t = len2>0 ? ((px-x1)*dx+(py-y1)*dy)/len2 : 0;
+  t = clamp(t,0,1);
+  const cx=x1+t*dx, cy=y1+t*dy;
+  return Math.hypot(px-cx,py-cy);
+}
+function pointInTriangle(px,py,x1,y1,x2,y2,x3,y3){
+  const d1=(px-x2)*(y1-y2)-(x1-x2)*(py-y2);
+  const d2=(px-x3)*(y2-y3)-(x2-x3)*(py-y3);
+  const d3=(px-x1)*(y3-y1)-(x3-x1)*(py-y1);
+  const hasNeg=(d1<0)||(d2<0)||(d3<0), hasPos=(d1>0)||(d2>0)||(d3>0);
+  return !(hasNeg && hasPos);
+}
+function safeEvalFunc(expr, x){
+  try{
+    // eslint-disable-next-line no-new-func
+    const f = safeEvalFunc._cache[expr] || (safeEvalFunc._cache[expr] = new Function('x','sin','cos','tan','exp','sqrt','abs','pow','PI',
+      'return ('+expr+');'));
+    return f(x, Math.sin, Math.cos, Math.tan, Math.exp, Math.sqrt, Math.abs, Math.pow, Math.PI);
+  }catch(e){ return 0; }
+}
+safeEvalFunc._cache = {};
+
+function materialInsideCell(m, x, y){
+  const w = (m.thickness||2)/2;
+  switch(m.type){
+    case 'line': return distToSeg(x,y,m.x1,m.y1,m.x2,m.y2) <= w;
+    case 'triangle': return pointInTriangle(x,y,m.x1,m.y1,m.x2,m.y2,m.x3,m.y3);
+    case 'circle': return Math.hypot(x-m.cx,y-m.cy) <= m.r;
+    case 'ellipse': { const nx=(x-m.cx)/m.rx, ny=(y-m.cy)/m.ry; return (nx*nx+ny*ny)<=1; }
+    case 'arc': {
+      const dx=x-m.cx, dy=y-m.cy; const r=Math.hypot(dx,dy);
+      if (Math.abs(r-m.r) > w) return false;
+      let a = Math.atan2(dy,dx)*180/Math.PI; if (a<0) a+=360;
+      let a0=((m.a0%360)+360)%360, a1=((m.a1%360)+360)%360;
+      if (a0<=a1) return a>=a0 && a<=a1;
+      return a>=a0 || a<=a1;
+    }
+    case 'earc': {
+      const nx=(x-m.cx)/m.rx, ny=(y-m.cy)/m.ry;
+      const rNorm = Math.hypot(nx,ny);
+      const distApprox = Math.abs(rNorm-1) * Math.min(m.rx,m.ry);
+      if (distApprox > w) return false;
+      let a = Math.atan2(ny,nx)*180/Math.PI; if (a<0) a+=360;
+      let a0=((m.a0%360)+360)%360, a1=((m.a1%360)+360)%360;
+      if (a0<=a1) return a>=a0 && a<=a1;
+      return a>=a0 || a<=a1;
+    }
+    case 'parc': {
+      const dxv = m.fx-m.vx, dyv = m.fy-m.vy;
+      const p = Math.hypot(dxv,dyv);
+      if (p < 1e-9) return false;
+      const dux=dxv/p, duy=dyv/p, nux=-duy, nuy=dux;
+      const rx=x-m.vx, ry=y-m.vy;
+      const u = rx*dux + ry*duy;
+      const v = rx*nux + ry*nuy;
+      if (Math.abs(v) > m.height/2) return false;
+      const uCurve = (v*v)/(4*p);
+      return Math.abs(u-uCurve) <= w;
+    }
+    case 'spline': {
+      const pts = m.points;
+      for (let i=0;i<pts.length-1;i++){
+        if (distToSeg(x,y,pts[i].x,pts[i].y,pts[i+1].x,pts[i+1].y) <= w) return true;
+      }
+      return false;
+    }
+    case 'func': {
+      if (x < m.xmin || x > m.xmax) return false;
+      const fy = safeEvalFunc(m.expr, x) + (m.yoff||0);
+      return Math.abs(y-fy) <= w;
+    }
+  }
+  return false;
+}
+
+// Rasterize all materials onto Nx*Ny grid -> Float32Array epsR,muR,sigma + Uint8Array pec
+function rasterizeMaterials(materials, gd){
+  const N = gd.Nx*gd.Ny;
+  const epsR = new Float32Array(N).fill(1);
+  const muR = new Float32Array(N).fill(1);
+  const sigma = new Float32Array(N).fill(0);
+  const pec = new Uint8Array(N);
+  const cx0 = gd.centerX||0, cy0 = gd.centerY||0;
+  const originX = cx0-(gd.nxCore*gd.dx)/2, originY = cy0-(gd.nyCore*gd.dx)/2; // world mm, core domain centered at (cx0,cy0)
+  for (const m of materials){
+    for (let i=0;i<gd.Nx;i++){
+      const x = originX + (i-gd.pml)*gd.dx;
+      for (let j=0;j<gd.Ny;j++){
+        const y = originY + (j-gd.pml)*gd.dx;
+        if (materialInsideCell(m,x,y)){
+          const idx = i*gd.Ny+j;
+          epsR[idx]=m.epsR; muR[idx]=m.muR; sigma[idx]=m.sigma; pec[idx]=m.pec?1:0;
+        }
+      }
+    }
+  }
+  return {epsR,muR,sigma,pec,originX,originY};
+}
+
+/* =========================================================================
+   3. CANVAS DRAWING / INTERACTION  (Materials tab + Sources tab)
+   Two independent canvases share the same drawing routines and the same
+   App.view transform (recomputed via fitView() whenever a panel becomes
+   active). Each panel draws its own object type at full strength and the
+   other type "ghosted" faint, for spatial reference without clutter.
+   ========================================================================= */
+function panelForTab(tab){
+  if (tab==='materials') return {canvas:$('matCanvas'), kind:'materials'};
+  if (tab==='sources') return {canvas:$('srcCanvas'), kind:'sources'};
+  return null;
+}
+function activePanel(){ return panelForTab(App.tab); }
+function activeCanvas(){ const p=activePanel(); return p?p.canvas:null; }
+
+function resizeCanvases(){
+  for (const c of [$('matCanvas'), $('srcCanvas'), $('vizCanvas')]){
+    const wrap = c.parentElement;
+    const w = wrap.clientWidth, h = wrap.clientHeight;
+    if (w>0 && h>0){ c.width = w; c.height = h; }
+  }
+}
+window.addEventListener('resize', ()=>{ resizeCanvases(); drawGeoCanvas(); drawVizCanvas(); });
+
+function fitView(){
+  const c = activeCanvas(); if (!c) return;
+  const g = App.project.grid;
+  const pad = 40;
+  const w = c.width - pad*2, h = c.height - pad*2;
+  const s = Math.min(w/g.domainW, h/g.domainH);
+  App.view.scale = s>0?s:1;
+  const cx0 = g.centerX||0, cy0 = g.centerY||0;
+  App.view.ox = c.width/2 - cx0*App.view.scale;
+  App.view.oy = c.height/2 + cy0*App.view.scale;
+}
+function w2s(x,y){ return [App.view.ox + x*App.view.scale, App.view.oy - y*App.view.scale]; }
+function s2w(px,py){ return [(px-App.view.ox)/App.view.scale, -(py-App.view.oy)/App.view.scale]; }
+
+function drawGeoCanvas(){
+  const panel = activePanel();
+  if (!panel) return;
+  const canvas = panel.canvas, ctx = canvas.getContext('2d');
+  const g=App.project.grid;
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  // domain rect (centered at the origin-shift point, not necessarily world 0,0)
+  const cx0 = g.centerX||0, cy0 = g.centerY||0;
+  const [x0,y0] = w2s(cx0-g.domainW/2, cy0+g.domainH/2);
+  const [x1,y1] = w2s(cx0+g.domainW/2, cy0-g.domainH/2);
+  ctx.strokeStyle='rgba(155,107,255,0.5)'; ctx.setLineDash([5,4]); ctx.lineWidth=1;
+  ctx.strokeRect(x0,y0,x1-x0,y1-y0);
+  ctx.setLineDash([]);
+  ctx.fillStyle='rgba(155,107,255,0.7)'; ctx.font='11px monospace';
+  ctx.fillText(`${g.domainW}×${g.domainH} mm domain`, x0, y0-8);
+  // origin-shift crosshair marker at the domain center
+  if (cx0 || cy0){
+    const [ccx,ccy] = w2s(cx0,cy0);
+    ctx.strokeStyle='rgba(255,171,61,0.6)'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(ccx-6,ccy); ctx.lineTo(ccx+6,ccy); ctx.moveTo(ccx,ccy-6); ctx.lineTo(ccx,ccy+6); ctx.stroke();
+  }
+
+  if (panel.kind==='materials'){
+    // ghost sources for spatial reference (not selectable here)
+    ctx.save(); ctx.globalAlpha=0.35;
+    for (const s of App.project.sources) drawSource(ctx, s, false);
+    ctx.restore();
+    for (const m of App.project.materials) drawMaterial(ctx, m, m.id===App.selectedId);
+  } else {
+    // ghost materials for spatial reference (not selectable here)
+    ctx.save(); ctx.globalAlpha=0.28;
+    for (const m of App.project.materials) drawMaterial(ctx, m, false);
+    ctx.restore();
+    for (const s of App.project.sources) drawSource(ctx, s, s.id===App.selectedId);
+  }
+  if (App.draft) drawDraft(ctx, App.draft);
+}
+function strokeStyleFor(ctx, m, sel){
+  ctx.strokeStyle = sel ? '#ffab3d' : (m.pec ? '#9b6bff' : '#5ed6a8');
+  ctx.fillStyle = sel ? 'rgba(255,171,61,0.18)' : (m.pec? 'rgba(155,107,255,0.18)':'rgba(94,214,168,0.14)');
+  ctx.lineWidth = sel?2.5:1.6;
+}
+function drawMaterial(ctx, m, sel){
+  strokeStyleFor(ctx, m, sel);
+  if (m.type==='line'){
+    const [a,b]=[w2s(m.x1,m.y1), w2s(m.x2,m.y2)];
+    ctx.lineWidth = Math.max(1.5, (m.thickness||2)*App.view.scale);
+    ctx.beginPath(); ctx.moveTo(a[0],a[1]); ctx.lineTo(b[0],b[1]); ctx.stroke();
+  } else if (m.type==='triangle'){
+    const p1=w2s(m.x1,m.y1),p2=w2s(m.x2,m.y2),p3=w2s(m.x3,m.y3);
+    ctx.beginPath(); ctx.moveTo(p1[0],p1[1]); ctx.lineTo(p2[0],p2[1]); ctx.lineTo(p3[0],p3[1]); ctx.closePath();
+    ctx.fill(); ctx.stroke();
+  } else if (m.type==='circle'){
+    const [cx,cy]=w2s(m.cx,m.cy); const r=m.r*App.view.scale;
+    ctx.beginPath(); ctx.arc(cx,cy,r,0,7); ctx.fill(); ctx.stroke();
+  } else if (m.type==='ellipse'){
+    const [cx,cy]=w2s(m.cx,m.cy);
+    ctx.beginPath(); ctx.ellipse(cx,cy,m.rx*App.view.scale,m.ry*App.view.scale,0,0,7); ctx.fill(); ctx.stroke();
+  } else if (m.type==='arc'){
+    const [cx,cy]=w2s(m.cx,m.cy); const r=m.r*App.view.scale;
+    ctx.lineWidth = Math.max(1.5,(m.thickness||2)*App.view.scale);
+    ctx.beginPath(); ctx.arc(cx,cy,r,-m.a1*Math.PI/180,-m.a0*Math.PI/180); ctx.stroke();
+  } else if (m.type==='earc'){
+    const [cx,cy]=w2s(m.cx,m.cy);
+    ctx.lineWidth = Math.max(1.5,(m.thickness||2)*App.view.scale);
+    ctx.beginPath(); ctx.ellipse(cx,cy,m.rx*App.view.scale,m.ry*App.view.scale,0,-m.a1*Math.PI/180,-m.a0*Math.PI/180); ctx.stroke();
+  } else if (m.type==='parc'){
+    ctx.lineWidth = Math.max(1.5,(m.thickness||2)*App.view.scale);
+    const dxv=m.fx-m.vx, dyv=m.fy-m.vy;
+    const p = Math.hypot(dxv,dyv)||1;
+    const dux=dxv/p, duy=dyv/p, nux=-duy, nuy=dux;
+    ctx.beginPath();
+    const steps=80;
+    for (let i=0;i<=steps;i++){
+      const v = -m.height/2 + m.height*i/steps;
+      const u = (v*v)/(4*p);
+      const wx = m.vx + u*dux + v*nux, wy = m.vy + u*duy + v*nuy;
+      const [sx,sy] = w2s(wx,wy);
+      i===0?ctx.moveTo(sx,sy):ctx.lineTo(sx,sy);
+    }
+    ctx.stroke();
+    // vertex + focus markers, with a dashed axis line between them
+    const [vsx,vsy] = w2s(m.vx,m.vy), [fsx,fsy] = w2s(m.fx,m.fy);
+    ctx.save(); ctx.setLineDash([3,3]); ctx.globalAlpha=0.6;
+    ctx.beginPath(); ctx.moveTo(vsx,vsy); ctx.lineTo(fsx,fsy); ctx.stroke();
+    ctx.restore();
+    ctx.beginPath(); ctx.arc(vsx,vsy,3,0,7); ctx.fill();
+    ctx.beginPath(); ctx.arc(fsx,fsy,2.5,0,7); ctx.stroke();
+  } else if (m.type==='spline'){
+    ctx.lineWidth = Math.max(1.5,(m.thickness||2)*App.view.scale);
+    ctx.beginPath();
+    m.points.forEach((p,i)=>{ const [x,y]=w2s(p.x,p.y); i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
+    ctx.stroke();
+  } else if (m.type==='func'){
+    ctx.lineWidth = Math.max(1.5,(m.thickness||2)*App.view.scale);
+    ctx.beginPath();
+    const steps=120;
+    for (let i=0;i<=steps;i++){
+      const x = m.xmin + (m.xmax-m.xmin)*i/steps;
+      const y = safeEvalFunc(m.expr,x) + (m.yoff||0);
+      const [sx,sy] = w2s(x,y);
+      i===0?ctx.moveTo(sx,sy):ctx.lineTo(sx,sy);
+    }
+    ctx.stroke();
+  }
+}
+function drawSource(ctx, s, sel){
+  ctx.strokeStyle = sel?'#ffab3d':'#ff6b6b';
+  ctx.fillStyle = sel?'#ffab3d':'#ff6b6b';
+  ctx.lineWidth = sel?2.5:1.6;
+  if (s.type==='dipole'){
+    const [x,y]=w2s(s.x,s.y);
+    ctx.beginPath(); ctx.arc(x,y,5,0,7); ctx.fill();
+    const len=18;
+    ctx.beginPath(); ctx.moveTo(x-s.dx*len,y+s.dy*len); ctx.lineTo(x+s.dx*len,y-s.dy*len); ctx.stroke();
+  } else if (s.type==='wire'){
+    const a=w2s(s.x1,s.y1), b=w2s(s.x2,s.y2);
+    ctx.beginPath(); ctx.moveTo(a[0],a[1]); ctx.lineTo(b[0],b[1]); ctx.stroke();
+    ctx.beginPath(); ctx.arc(a[0],a[1],3,0,7); ctx.arc(b[0],b[1],3,0,7); ctx.fill();
+  } else if (s.type==='loop'){
+    const [cx,cy]=w2s(s.x,s.y);
+    ctx.setLineDash([4,3]);
+    ctx.beginPath(); ctx.arc(cx,cy,s.radius*App.view.scale,0,7); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+}
+function drawDraft(ctx, d){
+  ctx.strokeStyle='#ffab3d'; ctx.fillStyle='rgba(255,171,61,0.5)'; ctx.lineWidth=1.5; ctx.setLineDash([3,3]);
+  if (d.pts.length){
+    ctx.beginPath();
+    d.pts.forEach((p,i)=>{ const [x,y]=w2s(p.x,p.y); i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
+    if (d.cur){ const [x,y]=w2s(d.cur.x,d.cur.y); ctx.lineTo(x,y); }
+    ctx.stroke();
+    d.pts.forEach(p=>{ const [x,y]=w2s(p.x,p.y); ctx.beginPath(); ctx.arc(x,y,3,0,7); ctx.fill(); });
+  }
+  ctx.setLineDash([]);
+}
+
+/* ----- toolbars (Materials tab + Sources tab, each scoped to its own panel) ----- */
+const TOOL_HINTS = {
+  select:'Click an object to select &amp; edit it in the list below.',
+  line:'Click start point, then click end point.',
+  triangle:'Click three points to define the triangle.',
+  circle:'Click center, then click to set radius.',
+  ellipse:'Click center, then click to set the bounding corner (rx,ry).',
+  arc:'Click center, then click to set radius. Edit start/end angle after creation.',
+  earc:'Click center, then click to set the bounding box (rx,ry). Edit start/end angle after creation.',
+  parc:'Click the vertex, then click the focal point. Adjust height/thickness after creation.',
+  spline:'Click to add points. Press Enter to finish, Esc to cancel.',
+  func:'A function curve is added directly — edit its expression in the list below.',
+  dipole:'Click to place a point dipole (edit orientation vector after creation).',
+  wire:'Click start point, then end point of the wire source.',
+  loop:'Click center, then click to set the loop radius.'
+};
+function wireToolbar(toolbarIds, hintId){
+  const toolbars = Array.isArray(toolbarIds) ? toolbarIds : [toolbarIds];
+  toolbars.forEach(tid=>{
+    document.querySelectorAll('#'+tid+' button').forEach(btn=>{
+      on(btn,'click',()=>{
+        toolbars.forEach(t2=>document.querySelectorAll('#'+t2+' button').forEach(b=>b.classList.remove('active')));
+        btn.classList.add('active');
+        App.tool = btn.dataset.tool;
+        App.draft = null;
+        App.selectedId = null;
+        renderLists();
+        $(hintId).innerHTML = TOOL_HINTS[App.tool]||'';
+        if (App.tool==='func'){
+          const m = defaultMaterial('func',[]);
+          App.project.materials.push(m); App.selectedId=m.id; renderLists(); drawGeoCanvas();
+          resetToolbarTo(toolbars, 'select');
+        }
+      });
+    });
+  });
+}
+wireToolbar(['toolbarMatSurface','toolbarMatRegion'], 'toolHintMat');
+wireToolbar(['toolbarSrc'], 'toolHintSrc');
+function resetToolbarTo(toolbarIds, tool){
+  const toolbars = Array.isArray(toolbarIds) ? toolbarIds : [toolbarIds];
+  for (const tid of toolbars){
+    const btn = document.querySelector('#'+tid+' button[data-tool='+tool+']');
+    if (btn){ btn.click(); return; }
+  }
+}
+
+function canvasPointToWorld(evt){
+  const rect = evt.currentTarget.getBoundingClientRect();
+  const px = evt.clientX-rect.left, py = evt.clientY-rect.top;
+  const [x,y] = s2w(px,py);
+  return {x,y};
+}
+
+function handleGeoClick(evt){
+  const p = canvasPointToWorld(evt);
+  const tool = App.tool;
+  if (tool==='select'){ trySelect(p); return; }
+
+  const shapeArity = {line:2,triangle:3,circle:2,ellipse:2,arc:2,earc:2,parc:2,dipole:1,wire:2,loop:2};
+  if (tool==='spline'){
+    App.draft = App.draft || {type:'spline', pts:[]};
+    App.draft.pts.push(p);
+    drawGeoCanvas();
+    return;
+  }
+  App.draft = App.draft || {type:tool, pts:[]};
+  App.draft.pts.push(p);
+  const need = shapeArity[tool]||1;
+  if (App.draft.pts.length>=need){
+    finishDraft();
+  } else {
+    drawGeoCanvas();
+  }
+}
+function handleGeoMove(evt){
+  if (!App.draft) return;
+  App.draft.cur = canvasPointToWorld(evt);
+  drawGeoCanvas();
+}
+on($('matCanvas'),'click', handleGeoClick);
+on($('srcCanvas'),'click', handleGeoClick);
+on($('matCanvas'),'mousemove', handleGeoMove);
+on($('srcCanvas'),'mousemove', handleGeoMove);
+
+window.addEventListener('keydown',(e)=>{
+  if (App.tab!=='materials' && App.tab!=='sources') return;
+  if (e.key==='Enter' && App.draft && App.draft.type==='spline' && App.draft.pts.length>=2){ finishDraft(); }
+  if (e.key==='Escape' && App.draft){ App.draft=null; drawGeoCanvas(); }
+});
+
+function finishDraft(){
+  const d = App.draft; App.draft=null;
+  const sourceTypes = {dipole:1,wire:1,loop:1};
+  let obj;
+  const toolbarIds = App.tab==='sources' ? ['toolbarSrc'] : ['toolbarMatSurface','toolbarMatRegion'];
+  if (sourceTypes[d.type]){
+    obj = defaultSource(d.type, d.pts);
+    App.project.sources.push(obj);
+  } else {
+    obj = defaultMaterial(d.type, d.pts);
+    App.project.materials.push(obj);
+  }
+  App.selectedId = obj.id;
+  resetToolbarTo(toolbarIds, 'select');
+  App.selectedId = obj.id;
+  renderLists(); drawGeoCanvas();
+}
+function trySelect(p){
+  if (App.tab==='materials'){
+    for (const m of App.project.materials){ if (materialInsideCell(Object.assign({},m,{thickness:Math.max(m.thickness||2,6)}),p.x,p.y)){ App.selectedId=m.id; renderLists(); drawGeoCanvas(); return; } }
+  } else if (App.tab==='sources'){
+    for (const s of App.project.sources){
+      const sx = s.x!==undefined?s.x:s.x1, sy=s.y!==undefined?s.y:s.y1;
+      if (s.type==='wire'){ if (distToSeg(p.x,p.y,s.x1,s.y1,s.x2,s.y2)<=6/App.view.scale){ App.selectedId=s.id; renderLists(); drawGeoCanvas(); return; } continue; }
+      const r = s.type==='loop'?s.radius:6/App.view.scale;
+      if (Math.hypot(p.x-sx,p.y-sy)<=Math.max(r,6/App.view.scale)){ App.selectedId=s.id; renderLists(); drawGeoCanvas(); return; }
+    }
+  }
+  App.selectedId=null; renderLists(); drawGeoCanvas();
+}
+
+function wireZoomControls(inId, outId, fitId){
+  on($(inId),'click',()=>{ App.view.scale*=1.2; drawGeoCanvas(); });
+  on($(outId),'click',()=>{ App.view.scale/=1.2; drawGeoCanvas(); });
+  on($(fitId),'click',()=>{ fitView(); drawGeoCanvas(); });
+}
+wireZoomControls('zoomInMat','zoomOutMat','zoomFitMat');
+wireZoomControls('zoomInSrc','zoomOutSrc','zoomFitSrc');
+
+/* =========================================================================
+   4. SIDEBAR OBJECT LISTS (editable numeric forms synced to canvas)
+   ========================================================================= */
+const MATERIAL_FIELDS = {
+  line:[['x1','X1 (mm)'],['y1','Y1 (mm)'],['x2','X2 (mm)'],['y2','Y2 (mm)'],['thickness','Thickness (mm)']],
+  triangle:[['x1','X1'],['y1','Y1'],['x2','X2'],['y2','Y2'],['x3','X3'],['y3','Y3']],
+  circle:[['cx','Cx'],['cy','Cy'],['r','Radius']],
+  ellipse:[['cx','Cx'],['cy','Cy'],['rx','Rx'],['ry','Ry']],
+  arc:[['cx','Cx'],['cy','Cy'],['r','Radius'],['a0','Start ° '],['a1','End °'],['thickness','Thickness (mm)']],
+  earc:[['cx','Cx'],['cy','Cy'],['rx','Rx'],['ry','Ry'],['a0','Start ° '],['a1','End °'],['thickness','Thickness (mm)']],
+  parc:[['vx','Vertex X'],['vy','Vertex Y'],['fx','Focus X'],['fy','Focus Y'],['height','Height (mm)'],['thickness','Thickness (mm)']],
+  spline:[],
+  func:[['expr','y = f(x)'],['xmin','X min'],['xmax','X max'],['yoff','Y offset'],['thickness','Thickness (mm)']]
+};
+function renderLists(){
+  $('matCount').textContent = App.project.materials.length;
+  $('srcCount').textContent = App.project.sources.length;
+  const ml = $('matList'); ml.innerHTML='';
+  App.project.materials.forEach(m=>ml.appendChild(materialCard(m)));
+  const sl = $('srcList'); sl.innerHTML='';
+  App.project.sources.forEach(s=>sl.appendChild(sourceCard(s)));
+}
+function makeNumInput(obj, key, label, redraw, step){
+  const wrap=document.createElement('div'); wrap.className='field';
+  const lab=document.createElement('label'); lab.textContent=label; wrap.appendChild(lab);
+  let inp;
+  if (key==='expr'){ inp=document.createElement('input'); inp.type='text'; }
+  else { inp=document.createElement('input'); inp.type='number'; inp.step=step||'any'; }
+  inp.value = obj[key];
+  inp.addEventListener('input',()=>{ obj[key]= key==='expr'? inp.value : (parseFloat(inp.value)||0); redraw(); });
+  inp.addEventListener('click', e=>e.stopPropagation());
+  wrap.appendChild(inp);
+  return wrap;
+}
+function materialCard(m){
+  const card=document.createElement('div'); card.className='objcard'+(m.id===App.selectedId?' selected':'');
+  const h=document.createElement('div'); h.className='oh';
+  h.innerHTML = `<span>${labelFor(m)} <span class="tag">${m.type}</span></span>`;
+  const del=document.createElement('button'); del.className='btn small danger'; del.textContent='✕';
+  del.onclick=(e)=>{e.stopPropagation(); App.project.materials=App.project.materials.filter(x=>x.id!==m.id); if(App.selectedId===m.id)App.selectedId=null; renderLists(); drawGeoCanvas();};
+  h.appendChild(del);
+  card.appendChild(h);
+  card.onclick=()=>{ App.selectedId = App.selectedId===m.id? null : m.id; renderLists(); drawGeoCanvas(); };
+  const body=document.createElement('div'); body.className='obody';
+  const grid=document.createElement('div'); grid.className='row2';
+  (MATERIAL_FIELDS[m.type]||[]).forEach(([k,l])=> grid.appendChild(makeNumInput(m,k,l,()=>drawGeoCanvas())));
+  body.appendChild(grid);
+  if (m.type==='spline'){
+    const note=document.createElement('div'); note.className='hint'; note.textContent=`${m.points.length} control points. Re-draw with the Spline tool to replace.`;
+    body.appendChild(note);
+    body.appendChild(makeNumInput(m,'thickness','Thickness (mm)',()=>drawGeoCanvas()));
+  }
+  const matgrid=document.createElement('div'); matgrid.className='row3'; matgrid.style.marginTop='6px';
+  matgrid.appendChild(makeNumInput(m,'epsR','εr'));
+  matgrid.appendChild(makeNumInput(m,'muR','μr'));
+  matgrid.appendChild(makeNumInput(m,'sigma','σ (S/m)'));
+  body.appendChild(matgrid);
+  const pecRow=document.createElement('label'); pecRow.className='chk'; pecRow.style.marginTop='6px';
+  const pecChk=document.createElement('input'); pecChk.type='checkbox'; pecChk.checked=m.pec;
+  pecChk.onclick=e=>e.stopPropagation();
+  pecChk.onchange=()=>{ m.pec=pecChk.checked; drawGeoCanvas(); };
+  pecRow.appendChild(pecChk); pecRow.appendChild(document.createTextNode(' PEC (perfect conductor)'));
+  body.appendChild(pecRow);
+  card.appendChild(body);
+  return card;
+}
+function labelFor(o){ return o.label ? o.label.charAt(0).toUpperCase()+o.label.slice(1) : o.type; }
+function sourceCard(s){
+  const card=document.createElement('div'); card.className='objcard'+(s.id===App.selectedId?' selected':'');
+  const h=document.createElement('div'); h.className='oh';
+  h.innerHTML = `<span>${labelFor(s)} <span class="tag">${s.type}</span></span>`;
+  const del=document.createElement('button'); del.className='btn small danger'; del.textContent='✕';
+  del.onclick=(e)=>{e.stopPropagation(); App.project.sources=App.project.sources.filter(x=>x.id!==s.id); if(App.selectedId===s.id)App.selectedId=null; renderLists(); drawGeoCanvas();};
+  h.appendChild(del);
+  card.appendChild(h);
+  card.onclick=()=>{ App.selectedId = App.selectedId===s.id? null : s.id; renderLists(); drawGeoCanvas(); };
+  const body=document.createElement('div'); body.className='obody';
+  const grid=document.createElement('div'); grid.className='row2';
+  if (s.type==='dipole'){
+    grid.appendChild(makeNumInput(s,'x','X (mm)',()=>drawGeoCanvas()));
+    grid.appendChild(makeNumInput(s,'y','Y (mm)',()=>drawGeoCanvas()));
+    grid.appendChild(makeNumInput(s,'z','Z (mm)',()=>drawGeoCanvas()));
+    grid.appendChild(makeNumInput(s,'dx','Orient dx',()=>drawGeoCanvas()));
+    grid.appendChild(makeNumInput(s,'dy','Orient dy',()=>drawGeoCanvas()));
+    grid.appendChild(makeNumInput(s,'dz','Orient dz',()=>drawGeoCanvas()));
+  } else if (s.type==='wire'){
+    grid.appendChild(makeNumInput(s,'x1','X1'));grid.appendChild(makeNumInput(s,'y1','Y1'));grid.appendChild(makeNumInput(s,'z1','Z1'));
+    grid.appendChild(makeNumInput(s,'x2','X2'));grid.appendChild(makeNumInput(s,'y2','Y2'));grid.appendChild(makeNumInput(s,'z2','Z2'));
+    grid.appendChild(makeNumInput(s,'npts','# segments'));
+  } else if (s.type==='loop'){
+    grid.appendChild(makeNumInput(s,'x','X'));grid.appendChild(makeNumInput(s,'y','Y'));grid.appendChild(makeNumInput(s,'z','Z'));
+    grid.appendChild(makeNumInput(s,'radius','Radius'));
+    grid.appendChild(makeNumInput(s,'nx','Normal nx'));grid.appendChild(makeNumInput(s,'ny','Normal ny'));grid.appendChild(makeNumInput(s,'nz','Normal nz'));
+    grid.appendChild(makeNumInput(s,'npts','# segments'));
+  }
+  grid.forEach = Array.prototype.forEach; // (no-op, keeps engines happy)
+  body.appendChild(grid);
+  const row2=document.createElement('div'); row2.className='row2'; row2.style.marginTop='6px';
+  row2.appendChild(makeNumInput(s,'amplitude','Amplitude (A)'));
+  row2.appendChild(makeNumInput(s,'phaseDeg','Phase (deg)'));
+  body.appendChild(row2);
+  if (s.type==='wire' || s.type==='loop'){
+    const taperWrap=document.createElement('div'); taperWrap.className='field'; taperWrap.style.marginTop='6px';
+    const lab=document.createElement('label'); lab.textContent='Current taper'; taperWrap.appendChild(lab);
+    const sel=document.createElement('select');
+    ['uniform','sinusoidal'].forEach(o=>{const opt=document.createElement('option');opt.value=o;opt.textContent=o;if(s.taper===o)opt.selected=true;sel.appendChild(opt);});
+    sel.onclick=e=>e.stopPropagation();
+    sel.onchange=()=>{ s.taper=sel.value; };
+    taperWrap.appendChild(sel);
+    body.appendChild(taperWrap);
+  }
+  card.appendChild(body);
+  return card;
+}
+document.querySelectorAll('.objcard input').forEach(i=>i.addEventListener('click',e=>e.stopPropagation()));
+
+/* =========================================================================
+   5. RUN TAB — worker orchestration
+   ========================================================================= */
+function log(msg){
+  const el=$('runLog'); const t=new Date().toLocaleTimeString();
+  el.textContent += `[${t}] ${msg}\n`; el.scrollTop = el.scrollHeight;
+}
+let runStartTime=0, elapsedTimer=null;
+
+on($('runBtn'),'click', startRun);
+on($('stopBtn'),'click', stopRun);
+
+function startRun(){
+  if (App.running) return;
+  const gd = deriveGrid();
+  if (App.project.sources.length===0){ log('⚠ No sources defined — add at least one source in the Geometry tab.'); return; }
+  App.running = true;
+  $('runBtn').disabled = true; $('stopBtn').disabled = false;
+  $('runStatus').textContent = 'running'; $('runStatus').style.color = 'var(--mango)';
+  $('runLog').textContent=''; $('progressFill').style.width='0%';
+  log(`Starting FDTD run — grid ${gd.Nx}×${gd.Ny} cells, dt=${(gd.dt*1e12).toFixed(3)}ps, ${gd.stepsPerCycle} steps/cycle.`);
+  runStartTime = performance.now();
+  elapsedTimer = setInterval(()=>{ $('statTime').textContent = ((performance.now()-runStartTime)/1000).toFixed(1)+'s'; },200);
+
+  const workerBlob = new Blob([FDTD_WORKER_SRC], {type:'application/javascript'});
+  const worker = new Worker(URL.createObjectURL(workerBlob));
+  App.worker = worker;
+  worker.onmessage = (e)=>{
+    const msg = e.data;
+    if (msg.type==='progress'){
+      $('statCycle').textContent = `${msg.cycle} / ${msg.maxCycles}`;
+      $('statStep').textContent = msg.step;
+      $('statConv').textContent = msg.conv!==null ? msg.conv.toExponential(2) : '—';
+      $('progressFill').style.width = clamp(100*msg.cycle/msg.maxCycles,0,100)+'%';
+      if (msg.log) log(msg.log);
+    } else if (msg.type==='done'){
+      App.results = msg.results;
+      finishRun(true);
+    } else if (msg.type==='error'){
+      log('✖ Error: '+msg.message);
+      finishRun(false);
+    }
+  };
+  worker.postMessage({
+    project: App.project,
+    grid: gd
+  });
+}
+function stopRun(){
+  if (App.worker){ App.worker.terminate(); App.worker=null; }
+  log('■ Stopped by user.');
+  finishRun(false);
+}
+function finishRun(success){
+  App.running=false;
+  $('runBtn').disabled=false; $('stopBtn').disabled=true;
+  clearInterval(elapsedTimer);
+  if (success){
+    $('runStatus').textContent='complete'; $('runStatus').style.color='var(--good)';
+    log('✔ Simulation complete. Switch to Visualize to inspect fields.');
+    $('exportResultsBtn').disabled=false;
+    setupPlayback();
+    drawVizCanvas();
+  } else {
+    $('runStatus').textContent='idle'; $('runStatus').style.color='';
+  }
+}
+
+/* =========================================================================
+   6. FDTD WORKER SOURCE  (runs inside a Blob Worker — self contained)
+   ========================================================================= */
+const FDTD_WORKER_SRC = `
+const C0 = 299792458, EPS0 = 8.8541878128e-12, MU0 = 1.25663706212e-6, Z0 = 376.730313668;
+
+function distToSeg(px,py,x1,y1,x2,y2){
+  const dx=x2-x1, dy=y2-y1; const len2=dx*dx+dy*dy;
+  let t = len2>0 ? ((px-x1)*dx+(py-y1)*dy)/len2 : 0;
+  t = Math.max(0,Math.min(1,t));
+  const cx=x1+t*dx, cy=y1+t*dy;
+  return Math.hypot(px-cx,py-cy);
+}
+function pointInTriangle(px,py,x1,y1,x2,y2,x3,y3){
+  const d1=(px-x2)*(y1-y2)-(x1-x2)*(py-y2);
+  const d2=(px-x3)*(y2-y3)-(x2-x3)*(py-y3);
+  const d3=(px-x1)*(y3-y1)-(x3-x1)*(py-y1);
+  const hasNeg=(d1<0)||(d2<0)||(d3<0), hasPos=(d1>0)||(d2>0)||(d3>0);
+  return !(hasNeg && hasPos);
+}
+const _fcache = {};
+function safeEvalFunc(expr, x){
+  try{
+    const f = _fcache[expr] || (_fcache[expr] = new Function('x','sin','cos','tan','exp','sqrt','abs','pow','PI','return ('+expr+');'));
+    return f(x, Math.sin, Math.cos, Math.tan, Math.exp, Math.sqrt, Math.abs, Math.pow, Math.PI);
+  }catch(e){ return 0; }
+}
+function materialInsideCell(m, x, y){
+  const w = (m.thickness||2)/2;
+  switch(m.type){
+    case 'line': return distToSeg(x,y,m.x1,m.y1,m.x2,m.y2) <= w;
+    case 'triangle': return pointInTriangle(x,y,m.x1,m.y1,m.x2,m.y2,m.x3,m.y3);
+    case 'circle': return Math.hypot(x-m.cx,y-m.cy) <= m.r;
+    case 'ellipse': { const nx=(x-m.cx)/m.rx, ny=(y-m.cy)/m.ry; return (nx*nx+ny*ny)<=1; }
+    case 'arc': {
+      const dx=x-m.cx, dy=y-m.cy; const r=Math.hypot(dx,dy);
+      if (Math.abs(r-m.r) > w) return false;
+      let a = Math.atan2(dy,dx)*180/Math.PI; if (a<0) a+=360;
+      let a0=((m.a0%360)+360)%360, a1=((m.a1%360)+360)%360;
+      if (a0<=a1) return a>=a0 && a<=a1;
+      return a>=a0 || a<=a1;
+    }
+    case 'earc': {
+      const nx=(x-m.cx)/m.rx, ny=(y-m.cy)/m.ry;
+      const rNorm = Math.hypot(nx,ny);
+      const distApprox = Math.abs(rNorm-1) * Math.min(m.rx,m.ry);
+      if (distApprox > w) return false;
+      let a = Math.atan2(ny,nx)*180/Math.PI; if (a<0) a+=360;
+      let a0=((m.a0%360)+360)%360, a1=((m.a1%360)+360)%360;
+      if (a0<=a1) return a>=a0 && a<=a1;
+      return a>=a0 || a<=a1;
+    }
+    case 'parc': {
+      const dxv = m.fx-m.vx, dyv = m.fy-m.vy;
+      const p = Math.hypot(dxv,dyv);
+      if (p < 1e-9) return false;
+      const dux=dxv/p, duy=dyv/p, nux=-duy, nuy=dux;
+      const rx=x-m.vx, ry=y-m.vy;
+      const u = rx*dux + ry*duy;
+      const v = rx*nux + ry*nuy;
+      if (Math.abs(v) > m.height/2) return false;
+      const uCurve = (v*v)/(4*p);
+      return Math.abs(u-uCurve) <= w;
+    }
+    case 'spline': {
+      const pts = m.points;
+      for (let i=0;i<pts.length-1;i++){ if (distToSeg(x,y,pts[i].x,pts[i].y,pts[i+1].x,pts[i+1].y) <= w) return true; }
+      return false;
+    }
+    case 'func': {
+      if (x < m.xmin || x > m.xmax) return false;
+      const fy = safeEvalFunc(m.expr, x) + (m.yoff||0);
+      return Math.abs(y-fy) <= w;
+    }
+  }
+  return false;
+}
+function rasterizeMaterials(materials, gd){
+  const N = gd.Nx*gd.Ny;
+  const epsR = new Float32Array(N).fill(1);
+  const muR = new Float32Array(N).fill(1);
+  const sigma = new Float32Array(N).fill(0);
+  const pec = new Uint8Array(N);
+  const cx0 = gd.centerX||0, cy0 = gd.centerY||0;
+  const originX = cx0-(gd.nxCore*gd.dx)/2, originY = cy0-(gd.nyCore*gd.dx)/2;
+  for (const m of materials){
+    for (let i=0;i<gd.Nx;i++){
+      const x = originX + (i-gd.pml)*gd.dx;
+      for (let j=0;j<gd.Ny;j++){
+        const y = originY + (j-gd.pml)*gd.dx;
+        if (materialInsideCell(m,x,y)){
+          const idx = i*gd.Ny+j;
+          epsR[idx]=m.epsR; muR[idx]=m.muR; sigma[idx]=m.sigma; pec[idx]=m.pec?1:0;
+        }
+      }
+    }
+  }
+  return {epsR,muR,sigma,pec,originX,originY};
+}
+
+function buildSourcePoints(sources, gd, planeZ){
+  // Expand dipole/wire/loop sources into elemental point injections {i,j,Jx,Jy,Jz,phaseRad,warn}
+  const pts = [];
+  const worldToCell = (x,y)=>{
+    const i = Math.round((x-rast.originX)/gd.dx) + gd.pml;
+    const j = Math.round((y-rast.originY)/gd.dx) + gd.pml;
+    return [i,j];
+  };
+  for (const s of sources){
+    const amp = s.amplitude, ph = (s.phaseDeg||0)*Math.PI/180;
+    if (s.type==='dipole'){
+      const norm = Math.hypot(s.dx,s.dy,s.dz)||1;
+      const zWarn = Math.abs((s.z||0)-planeZ) > gd.dx*3;
+      pts.push({x:s.x,y:s.y, Jx:amp*s.dx/norm, Jy:amp*s.dy/norm, Jz:amp*s.dz/norm, phase:ph, warn:zWarn});
+    } else if (s.type==='wire'){
+      const n = Math.max(2, s.npts||12);
+      const dxv=s.x2-s.x1, dyv=s.y2-s.y1, dzv=(s.z2||0)-(s.z1||0);
+      const len = Math.hypot(dxv,dyv,dzv)||1;
+      const ux=dxv/len, uy=dyv/len, uz=dzv/len;
+      for (let k=0;k<n;k++){
+        const t = (k+0.5)/n;
+        const x = s.x1+dxv*t, y=s.y1+dyv*t, z=(s.z1||0)+dzv*t;
+        let taper = 1;
+        if (s.taper==='sinusoidal') taper = Math.sin(Math.PI*t);
+        const zWarn = Math.abs(z-planeZ) > gd.dx*3;
+        pts.push({x,y, Jx:amp*taper*ux, Jy:amp*taper*uy, Jz:amp*taper*uz, phase:ph, warn:zWarn});
+      }
+    } else if (s.type==='loop'){
+      const n = Math.max(4, s.npts||16);
+      const nrm = Math.hypot(s.nx,s.ny,s.nz)||1;
+      const nx=s.nx/nrm, ny=s.ny/nrm, nz=s.nz/nrm;
+      // build two orthonormal in-plane basis vectors u,v perpendicular to normal
+      let ax = Math.abs(nx)<0.9 ? 1:0, ay = Math.abs(nx)<0.9?0:1, az=0;
+      let ux = ay*nz-az*ny, uy = az*nx-ax*nz, uz = ax*ny-ay*nx;
+      const ulen=Math.hypot(ux,uy,uz)||1; ux/=ulen; uy/=ulen; uz/=ulen;
+      let vx = ny*uz-nz*uy, vy = nz*ux-nx*uz, vz = nx*uy-ny*ux;
+      for (let k=0;k<n;k++){
+        const t = k/n*2*Math.PI;
+        const px = s.x + s.radius*(Math.cos(t)*ux+Math.sin(t)*vx);
+        const py = s.y + s.radius*(Math.cos(t)*uy+Math.sin(t)*vy);
+        const pz = (s.z||0) + s.radius*(Math.cos(t)*uz+Math.sin(t)*vz);
+        // tangential direction (derivative wrt t)
+        const tx = -Math.sin(t)*ux+Math.cos(t)*vx;
+        const ty = -Math.sin(t)*uy+Math.cos(t)*vy;
+        const tz = -Math.sin(t)*uz+Math.cos(t)*vz;
+        let taper=1;
+        if (s.taper==='sinusoidal') taper = Math.sin(t);
+        const zWarn = Math.abs(pz-planeZ) > gd.dx*3;
+        pts.push({x:px,y:py, Jx:amp*taper*tx, Jy:amp*taper*ty, Jz:amp*taper*tz, phase:ph, warn:zWarn});
+      }
+    }
+  }
+  return pts.map(p=>{ const [i,j]=worldToCell(p.x,p.y); return Object.assign({i,j},p); });
+}
+
+var rast; // set in main()
+
+function main(project, gd){
+  const dx = gd.dx*1e-3; // meters
+  const dt = gd.dt;
+  const Nx = gd.Nx, Ny = gd.Ny;
+  rast = rasterizeMaterials(project.materials, gd);
+  const {epsR,muR,sigma,pec} = rast;
+  const N = Nx*Ny;
+  const idx = (i,j)=> i*Ny+j;
+
+  // Field arrays
+  const Ez=new Float32Array(N), Hx=new Float32Array(N), Hy=new Float32Array(N);
+  const Ex=new Float32Array(N), Ey=new Float32Array(N), Hz=new Float32Array(N);
+
+  // update coefficients (collocated approximation)
+  const Ca=new Float32Array(N), Cb=new Float32Array(N), Da=new Float32Array(N), Db=new Float32Array(N);
+  for (let n=0;n<N;n++){
+    const eps = epsR[n]*EPS0, mu = muR[n]*MU0, sig = sigma[n];
+    Ca[n] = (1-sig*dt/(2*eps))/(1+sig*dt/(2*eps));
+    Cb[n] = (dt/eps)/(1+sig*dt/(2*eps));
+    Da[n] = 1;
+    Db[n] = dt/mu;
+  }
+
+  // ---- PML: graded loss profile (matched sigma_e/eps0 = sigma_m/mu0), applied as extra loss ----
+  const pml = gd.pml, m = project.solver.pmlM;
+  const sigMaxE = -(m+1)*Math.log(1e-5)/(2*Z0*pml*dx);
+  const sigProfile = new Float32Array(Math.max(Nx,Ny));
+  function gradedSigma(depth){ return sigMaxE*Math.pow(depth/pml, m); }
+  const sigX = new Float32Array(Nx), sigY = new Float32Array(Ny);
+  for (let i=0;i<Nx;i++){
+    let d=0;
+    if (i<pml) d = pml-i; else if (i>=Nx-pml) d = i-(Nx-pml-1);
+    sigX[i]=d>0?gradedSigma(d):0;
+  }
+  for (let j=0;j<Ny;j++){
+    let d=0;
+    if (j<pml) d = pml-j; else if (j>=Ny-pml) d = j-(Ny-pml-1);
+    sigY[j]=d>0?gradedSigma(d):0;
+  }
+  // Precompute per-cell extra PML conductivity added to Ca/Cb/Da/Db (single-field lossy-layer PML approx)
+  const CaP=new Float32Array(N), CbP=new Float32Array(N), DbP=new Float32Array(N);
+  for (let i=0;i<Nx;i++){
+    for (let j=0;j<Ny;j++){
+      const n=idx(i,j);
+      const sig = sigX[i]+sigY[j];
+      const eps = epsR[n]*EPS0, mu = muR[n]*MU0;
+      const sigTot = sigma[n]+sig;
+      CaP[n] = (1-sigTot*dt/(2*eps))/(1+sigTot*dt/(2*eps));
+      CbP[n] = (dt/eps)/(1+sigTot*dt/(2*eps));
+      const sigM = sig*(mu/eps); // matched magnetic loss
+      DbP[n] = (dt/mu)/(1+sigM*dt/(2*mu));
+    }
+  }
+
+  const srcPts = buildSourcePoints(project.sources, gd, project.grid.planeZ);
+  let warned=false;
+  for (const p of srcPts){ if (p.warn && !warned){ warned=true; postMessage({type:'progress',cycle:0,maxCycles:project.solver.maxCycles,step:0,conv:null,log:'\u26a0 A source is placed far from the grid plane Z — projecting onto the plane anyway.'}); } }
+
+  const omega = 2*Math.PI*project.grid.freqGHz*1e9;
+  const stepsPerCycle = gd.stepsPerCycle;
+  const maxCycles = project.solver.maxCycles;
+  const convThresh = project.solver.convThresh;
+  const convEnable = project.solver.convEnable;
+
+  // monitor point: center of domain
+  const monI = Math.floor(Nx/2), monJ = Math.floor(Ny/2);
+  let lastCyclePeak = 0, converged = false, cycle = 0, step = 0;
+  let cyclePeak = 0;
+
+  // allow one extra cycle beyond the cap so the triggered recording period can actually run
+  const maxSteps = stepsPerCycle*(maxCycles+1);
+  const t0report = Date.now();
+
+  function stepFields(t){
+    // --- H updates (TMz: Hx,Hy from Ez ; TEz: Hz from Ex,Ey) ---
+    for (let i=0;i<Nx;i++){
+      for (let j=0;j<Ny-1;j++){
+        const n=idx(i,j);
+        Hx[n] -= DbP[n]*(Ez[idx(i,j+1)]-Ez[n])/dx;
+      }
+    }
+    for (let i=0;i<Nx-1;i++){
+      for (let j=0;j<Ny;j++){
+        const n=idx(i,j);
+        Hy[n] += DbP[n]*(Ez[idx(i+1,j)]-Ez[n])/dx;
+      }
+    }
+    for (let i=0;i<Nx-1;i++){
+      for (let j=0;j<Ny-1;j++){
+        const n=idx(i,j);
+        Hz[n] -= DbP[n]*(((Ey[idx(i+1,j)]-Ey[n])/dx) - ((Ex[idx(i,j+1)]-Ex[n])/dx));
+      }
+    }
+    // --- E updates (TMz: Ez from Hx,Hy ; TEz: Ex,Ey from Hz) + sources ---
+    for (let i=1;i<Nx-1;i++){
+      for (let j=1;j<Ny-1;j++){
+        const n=idx(i,j);
+        if (pec[n]){ Ez[n]=0; continue; }
+        const curl = (Hy[n]-Hy[idx(i-1,j)])/dx - (Hx[n]-Hx[idx(i,j-1)])/dx;
+        Ez[n] = CaP[n]*Ez[n] + CbP[n]*curl;
+      }
+    }
+    for (let i=0;i<Nx;i++){
+      for (let j=1;j<Ny-1;j++){
+        const n=idx(i,j);
+        if (pec[n]){ Ex[n]=0; continue; }
+        const curl = (Hz[n]-Hz[idx(i,j-1)])/dx;
+        Ex[n] = CaP[n]*Ex[n] + CbP[n]*curl;
+      }
+    }
+    for (let i=1;i<Nx-1;i++){
+      for (let j=0;j<Ny;j++){
+        const n=idx(i,j);
+        if (pec[n]){ Ey[n]=0; continue; }
+        const curl = -((Hz[n]-Hz[idx(i-1,j)])/dx);
+        Ey[n] = CaP[n]*Ey[n] + CbP[n]*curl;
+      }
+    }
+    // inject sources (soft current source, CW)
+    const sv = Math.sin(omega*t);
+    for (const p of srcPts){
+      if (p.i<=0||p.i>=Nx-1||p.j<=0||p.j>=Ny-1) continue;
+      const n = idx(p.i,p.j);
+      const s = sv; // phase handled via omega*t + phase below
+      const sPhased = Math.sin(omega*t + p.phase);
+      if (p.Jz) Ez[n] += CbP[n]*p.Jz*sPhased/(dx*dx);
+      if (p.Jx) Ex[n] += CbP[n]*p.Jx*sPhased/(dx*dx);
+      if (p.Jy) Ey[n] += CbP[n]*p.Jy*sPhased/(dx*dx);
+    }
+  }
+
+  // DFT accumulators (final period only)
+  let ExR=null,ExI=null,EyR=null,EyI=null,EzR=null,EzI=null,HxR=null,HxI=null,HyR=null,HyI=null,HzR=null,HzI=null;
+  const frames = [];
+  const framesPerCycle = 24;
+
+  let recording = false;
+  let recordStepStart = 0;
+
+  for (step=0; step<maxSteps; step++){
+    const t = step*dt;
+    stepFields(t);
+
+    if (recording){
+      ExR.forEach((_,n)=>{}); // no-op guard (keeps JIT happy)
+      const c = Math.cos(omega*t), sN = Math.sin(omega*t);
+      for (let n=0;n<N;n++){
+        ExR[n]+=Ex[n]*c; ExI[n]-=Ex[n]*sN;
+        EyR[n]+=Ey[n]*c; EyI[n]-=Ey[n]*sN;
+        EzR[n]+=Ez[n]*c; EzI[n]-=Ez[n]*sN;
+        HxR[n]+=Hx[n]*c; HxI[n]-=Hx[n]*sN;
+        HyR[n]+=Hy[n]*c; HyI[n]-=Hy[n]*sN;
+        HzR[n]+=Hz[n]*c; HzI[n]-=Hz[n]*sN;
+      }
+      const localStep = step-recordStepStart;
+      if (localStep % Math.round(stepsPerCycle/framesPerCycle) === 0){
+        frames.push({t, Ex:Ex.slice(), Ey:Ey.slice(), Ez:Ez.slice(), Hx:Hx.slice(), Hy:Hy.slice(), Hz:Hz.slice()});
+      }
+      if (localStep >= stepsPerCycle-1) break; // recorded one full period
+    }
+
+    const av = Math.abs(Ez[idx(monI,monJ)]);
+    if (av>cyclePeak) cyclePeak = av;
+
+    if (!recording && (step+1) % stepsPerCycle === 0){
+      cycle++;
+      const denom = Math.max(lastCyclePeak, 1e-30);
+      const conv = Math.abs(cyclePeak-lastCyclePeak)/denom;
+      const elapsed = (Date.now()-t0report)/1000;
+      postMessage({type:'progress', cycle, maxCycles, step, conv: cycle>1?conv:null, log: cycle===1?null:('Cycle '+cycle+': peak |Ez| at monitor = '+cyclePeak.toExponential(3)+', ΔA/A = '+conv.toExponential(3))});
+      if (cycle>1 && convEnable && conv < convThresh){
+        postMessage({type:'progress', cycle, maxCycles, step, conv, log:'\u2713 Converged after '+cycle+' cycles — recording final period for phasor extraction.'});
+        recording = true; recordStepStart = step+1;
+        ExR=new Float32Array(N);ExI=new Float32Array(N);EyR=new Float32Array(N);EyI=new Float32Array(N);EzR=new Float32Array(N);EzI=new Float32Array(N);
+        HxR=new Float32Array(N);HxI=new Float32Array(N);HyR=new Float32Array(N);HyI=new Float32Array(N);HzR=new Float32Array(N);HzI=new Float32Array(N);
+      } else if (cycle>=maxCycles){
+        postMessage({type:'progress', cycle, maxCycles, step, conv, log:'Reached max cycle cap — recording final period for phasor extraction.'});
+        recording = true; recordStepStart = step+1;
+        ExR=new Float32Array(N);ExI=new Float32Array(N);EyR=new Float32Array(N);EyI=new Float32Array(N);EzR=new Float32Array(N);EzI=new Float32Array(N);
+        HxR=new Float32Array(N);HxI=new Float32Array(N);HyR=new Float32Array(N);HyI=new Float32Array(N);HzR=new Float32Array(N);HzI=new Float32Array(N);
+      }
+      lastCyclePeak = cyclePeak; cyclePeak = 0;
+    }
+  }
+  if (!ExR){ // never converged / no recording triggered (very short run) — record last period anyway
+    ExR=new Float32Array(N);ExI=new Float32Array(N);EyR=new Float32Array(N);EyI=new Float32Array(N);EzR=new Float32Array(N);EzI=new Float32Array(N);
+    HxR=new Float32Array(N);HxI=new Float32Array(N);HyR=new Float32Array(N);HyI=new Float32Array(N);HzR=new Float32Array(N);HzI=new Float32Array(N);
+  }
+  const scale = 2/stepsPerCycle;
+  for (let n=0;n<N;n++){ ExR[n]*=scale; ExI[n]*=scale; EyR[n]*=scale; EyI[n]*=scale; EzR[n]*=scale; EzI[n]*=scale;
+    HxR[n]*=scale; HxI[n]*=scale; HyR[n]*=scale; HyI[n]*=scale; HzR[n]*=scale; HzI[n]*=scale; }
+
+  // ---- Near-to-far field transform (2D equivalence principle on rectangular Huygens contour) ----
+  const margin = project.solver.ffMargin;
+  const i0=pml+margin, i1=Nx-pml-margin, j0=pml+margin, j1=Ny-pml-margin;
+  const k = omega/C0;
+  const resDeg = project.solver.ffResDeg;
+  const angles = [];
+  for (let a=0;a<360;a+=resDeg) angles.push(a);
+  const patTM = new Float32Array(angles.length); // from Ez,Hx,Hy
+  const patTE = new Float32Array(angles.length); // from Hz,Ex,Ey
+
+  function contourPoints(){
+    const pts = [];
+    for (let i=i0;i<=i1;i++){ pts.push({i,j:j0, nx:0, ny:-1}); }
+    for (let j=j0;j<=j1;j++){ pts.push({i:i1,j, nx:1, ny:0}); }
+    for (let i=i1;i>=i0;i--){ pts.push({i,j:j1, nx:0, ny:1}); }
+    for (let j=j1;j>=j0;j--){ pts.push({i:i0,j, nx:-1, ny:0}); }
+    return pts;
+  }
+  const contour = contourPoints();
+  for (let ai=0; ai<angles.length; ai++){
+    const phi = angles[ai]*Math.PI/180;
+    const rx = Math.cos(phi), ry = Math.sin(phi);
+    let reTM=0, imTM=0, reTE=0, imTE=0;
+    for (const cp of contour){
+      const n = idx(cp.i,cp.j);
+      const x = rast.originX + (cp.i-pml)*gd.dx, y = rast.originY + (cp.j-pml)*gd.dx;
+      const phase = k*(rx*x*1e-3 + ry*y*1e-3);
+      const cs=Math.cos(phase), sn=Math.sin(phase);
+      // TMz: Jz = n.(Hy,-Hx) i.e (nx*Hy - ny*Hx); Mx,My from Ez
+      const Jz_r = cp.nx*HyR[n]-cp.ny*HxR[n], Jz_i = cp.nx*HyI[n]-cp.ny*HxI[n];
+      const Mx_r = -(-cp.ny)*EzR[n], Mx_i = -(-cp.ny)*EzI[n]; // M = -n x (Ez zhat) => Mx=-(-ny)*Ez=ny*Ez ... simplified below
+      const My_r = -(cp.nx)*EzR[n], My_i = -(cp.nx)*EzI[n];
+      const rMcross_r = rx*My_r - ry*Mx_r, rMcross_i = rx*My_i - ry*Mx_i;
+      const integrandTM_r = Jz_r + rMcross_r/Z0, integrandTM_i = Jz_i + rMcross_i/Z0;
+      reTM += integrandTM_r*cs - integrandTM_i*sn;
+      imTM += integrandTM_r*sn + integrandTM_i*cs;
+      // TEz (dual): Mz = -(n x E)_z = -(nx*Ey-ny*Ex); J = n x (Hz zhat)
+      const Mz_r = -(cp.nx*EyR[n]-cp.ny*ExR[n]), Mz_i = -(cp.nx*EyI[n]-cp.ny*ExI[n]);
+      const Jx_r = -(-cp.ny)*HzR[n], Jx_i = -(-cp.ny)*HzI[n];
+      const Jy_r = -(cp.nx)*HzR[n], Jy_i = -(cp.nx)*HzI[n];
+      const rJcross_r = rx*Jy_r - ry*Jx_r, rJcross_i = rx*Jy_i - ry*Jx_i;
+      const integrandTE_r = Mz_r/Z0 + rJcross_r, integrandTE_i = Mz_i/Z0 + rJcross_i;
+      reTE += integrandTE_r*cs - integrandTE_i*sn;
+      imTE += integrandTE_r*sn + integrandTE_i*cs;
+    }
+    patTM[ai] = Math.hypot(reTM,imTM);
+    patTE[ai] = Math.hypot(reTE,imTE);
+  }
+
+  postMessage({type:'done', results:{
+    Nx, Ny, dx:gd.dx, pml, originX:rast.originX, originY:rast.originY,
+    phasor:{ ExR:Array.from(ExR),ExI:Array.from(ExI), EyR:Array.from(EyR),EyI:Array.from(EyI), EzR:Array.from(EzR),EzI:Array.from(EzI),
+             HxR:Array.from(HxR),HxI:Array.from(HxI), HyR:Array.from(HyR),HyI:Array.from(HyI), HzR:Array.from(HzR),HzI:Array.from(HzI) },
+    frames: frames.map(f=>({t:f.t, Ex:Array.from(f.Ex), Ey:Array.from(f.Ey), Ez:Array.from(f.Ez), Hx:Array.from(f.Hx), Hy:Array.from(f.Hy), Hz:Array.from(f.Hz)})),
+    farField: { anglesDeg: angles, patternTM: Array.from(patTM), patternTE: Array.from(patTE) },
+    freqGHz: project.grid.freqGHz
+  }});
+}
+
+onmessage = function(e){
+  try{
+    main(e.data.project, e.data.grid);
+  }catch(err){
+    postMessage({type:'error', message: (err && err.message) || String(err)});
+  }
+};
+`;
+
+/* =========================================================================
+   7. VISUALIZE TAB
+   ========================================================================= */
+const vizCanvas = $('vizCanvas');
+const vctx = vizCanvas.getContext('2d');
+
+const COLORMAPS = {
+  viridis: [[68,1,84],[59,82,139],[33,145,140],[94,201,98],[253,231,37]],
+  rdbu: [[103,0,31],[214,96,77],[247,247,247],[67,147,195],[5,48,97]],
+  mangoviolet: [[11,12,16],[93,68,153],[155,107,255],[255,171,61],[255,224,150]],
+  inferno: [[0,0,4],[87,16,110],[188,55,84],[249,142,9],[252,255,164]],
+  gray: [[10,10,10],[255,255,255]]
+};
+function lerpColor(stops, t){
+  t = clamp(t,0,1);
+  const n = stops.length-1;
+  const seg = clamp(Math.floor(t*n), 0, n-1);
+  const localT = t*n-seg;
+  const a = stops[seg], b = stops[seg+1];
+  return [ a[0]+(b[0]-a[0])*localT, a[1]+(b[1]-a[1])*localT, a[2]+(b[2]-a[2])*localT ];
+}
+function colormapCSS(name){
+  const stops = COLORMAPS[name]||COLORMAPS.viridis;
+  return 'linear-gradient(0deg,'+stops.map((c,i)=>`rgb(${c[0]},${c[1]},${c[2]}) ${Math.round(100*i/(stops.length-1))}%`).join(',')+')';
+}
+
+const COMPLEX_COMPONENTS = {Ex:1,Ey:1,Ez:1,Hx:1,Hy:1,Hz:1};
+function applyFunc(re, im, func){
+  switch(func){
+    case 're': return re;
+    case 'im': return im;
+    case 'arg_rad': return Math.atan2(im,re);
+    case 'arg_deg': return Math.atan2(im,re)*180/Math.PI;
+    case 'abs2': return re*re+im*im;
+    case 'abs': default: return Math.hypot(re,im);
+  }
+}
+function computeFieldArray(res, field, func, frame){
+  const N = res.Nx*res.Ny;
+  const out = new Float32Array(N);
+  const isComplexComp = !!COMPLEX_COMPONENTS[field];
+  for (let n=0;n<N;n++){
+    let val=0;
+    if (frame){
+      const Ex=frame.Ex[n],Ey=frame.Ey[n],Ez=frame.Ez[n],Hx=frame.Hx[n],Hy=frame.Hy[n],Hz=frame.Hz[n];
+      if (isComplexComp){
+        // time-domain snapshot is a real number (Im=0) for the chosen function
+        const re = {Ex,Ey,Ez,Hx,Hy,Hz}[field];
+        val = applyFunc(re, 0, func);
+      } else {
+        switch(field){
+          case 'Emag': val=Math.hypot(Ex,Ey,Ez); break;
+          case 'Hmag': val=Math.hypot(Hx,Hy,Hz); break;
+          case 'Sx': val=Ey*Hz-Ez*Hy; break;
+          case 'Sy': val=Ez*Hx-Ex*Hz; break;
+          case 'Sz': val=Ex*Hy-Ey*Hx; break;
+          case 'Smag': val=Math.hypot(Ey*Hz-Ez*Hy, Ez*Hx-Ex*Hz, Ex*Hy-Ey*Hx); break;
+          default: val=Ez;
+        }
+      }
+    } else {
+      const p = res.phasor;
+      const ExR=p.ExR[n],ExI=p.ExI[n],EyR=p.EyR[n],EyI=p.EyI[n],EzR=p.EzR[n],EzI=p.EzI[n];
+      const HxR=p.HxR[n],HxI=p.HxI[n],HyR=p.HyR[n],HyI=p.HyI[n],HzR=p.HzR[n],HzI=p.HzI[n];
+      const mag=(r,i)=>Math.hypot(r,i);
+      if (isComplexComp){
+        const pair = {Ex:[ExR,ExI],Ey:[EyR,EyI],Ez:[EzR,EzI],Hx:[HxR,HxI],Hy:[HyR,HyI],Hz:[HzR,HzI]}[field];
+        val = applyFunc(pair[0], pair[1], func);
+      } else {
+        const sx = 0.5*(EyR*HzR+EyI*HzI - (EzR*HyR+EzI*HyI));
+        const sy = 0.5*(EzR*HxR+EzI*HxI - (ExR*HzR+ExI*HzI));
+        const sz = 0.5*(ExR*HyR+ExI*HyI - (EyR*HxR+EyI*HxI));
+        switch(field){
+          case 'Emag': val=Math.hypot(mag(ExR,ExI),mag(EyR,EyI),mag(EzR,EzI)); break;
+          case 'Hmag': val=Math.hypot(mag(HxR,HxI),mag(HyR,HyI),mag(HzR,HzI)); break;
+          case 'Sx': val=sx; break;
+          case 'Sy': val=sy; break;
+          case 'Sz': val=sz; break;
+          case 'Smag': val=Math.hypot(sx,sy,sz); break;
+          default: val=mag(EzR,EzI);
+        }
+      }
+    }
+    out[n]=val;
+  }
+  return out;
+}
+
+function drawVizCanvas(){
+  if (App.tab!=='visualize') return;
+  const ctx=vctx; ctx.clearRect(0,0,vizCanvas.width,vizCanvas.height);
+  if (!App.results){
+    ctx.fillStyle='var(--dim)'; ctx.font='13px sans-serif';
+    ctx.fillStyle='#8b8fa3';
+    ctx.fillText('Run a simulation to see field data here.', 20, 30);
+    return;
+  }
+  const res = App.results;
+  const field = $('v_field').value;
+  const func = $('v_func').disabled ? 'abs' : $('v_func').value;
+  const source = $('v_source').value;
+  const frame = (source==='frame' && res.frames.length) ? res.frames[clamp(parseInt($('playSlider').value)||0,0,res.frames.length-1)] : null;
+  const arr = computeFieldArray(res, field, func, frame);
+
+  let mn, mx;
+  const scaleType = $('v_scale').value;
+  let disp = arr;
+  if (scaleType==='log'){ disp = arr.map(v=>Math.log10(Math.max(Math.abs(v),1e-12))); }
+  else if (scaleType==='db'){ disp = arr.map(v=>20*Math.log10(Math.max(Math.abs(v),1e-12))); }
+
+  if ($('v_auto').checked){
+    mn=Infinity; mx=-Infinity;
+    for (const v of disp){ if (v<mn) mn=v; if (v>mx) mx=v; }
+    if (scaleType==='linear' && !$('v_func').disabled && (func==='arg_rad')){ mn=-Math.PI; mx=Math.PI; }
+    if (scaleType==='linear' && !$('v_func').disabled && (func==='arg_deg')){ mn=-180; mx=180; }
+    if (scaleType==='db'){ mn = mx - 60; } // keep computed max; floor fixed at 60 dB below max
+    $('v_min').value = fmt(mn,4); $('v_max').value=fmt(mx,4);
+  } else {
+    mn = parseFloat($('v_min').value); mx = parseFloat($('v_max').value);
+  }
+  if (!(mx>mn)) mx = mn+1e-9;
+
+  const cmapName = $('v_cmap').value;
+  const stops = COLORMAPS[cmapName]||COLORMAPS.viridis;
+
+  // render field to offscreen image then draw scaled
+  const Nx=res.Nx, Ny=res.Ny;
+  const off = document.createElement('canvas'); off.width=Nx; off.height=Ny;
+  const octx = off.getContext('2d');
+  const imgData = octx.createImageData(Nx,Ny);
+  for (let i=0;i<Nx;i++){
+    for (let j=0;j<Ny;j++){
+      const v = disp[i*Ny+j];
+      const t = (v-mn)/(mx-mn);
+      const [r,g,b] = lerpColor(stops, t);
+      const px = (j*Nx+i)*4; // flip so j is row (Ny) -> image row order will be handled by draw transform
+      imgData.data[px]=r; imgData.data[px+1]=g; imgData.data[px+2]=b; imgData.data[px+3]=255;
+    }
+  }
+  octx.putImageData(imgData,0,0);
+
+  // draw scaled into main canvas, y flipped so +y is up
+  const pad=40;
+  const availW = vizCanvas.width-pad*2, availH = vizCanvas.height-pad*2;
+  const s = Math.min(availW/Nx, availH/Ny);
+  const dw = Nx*s, dh = Ny*s;
+  const dx0 = (vizCanvas.width-dw)/2, dy0=(vizCanvas.height-dh)/2;
+  ctx.save();
+  ctx.translate(dx0, dy0+dh);
+  ctx.scale(1,-1);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(off, 0,0, Nx, Ny, 0,0, dw, dh);
+  ctx.restore();
+
+  // geometry outline overlay
+  if ($('v_geo').checked){
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.lineWidth=1;
+    const toPix = (x,y)=>{
+      const i = (x-res.originX)/res.dx + res.pml;
+      const j = (y-res.originY)/res.dx + res.pml;
+      return [dx0+i*s, dy0+dh-j*s];
+    };
+    for (const m of App.project.materials){
+      const outline = materialOutlinePoints(m);
+      if (!outline.pts.length) continue;
+      ctx.beginPath();
+      outline.pts.forEach((p,idx)=>{ const [px,py]=toPix(p.x,p.y); idx===0?ctx.moveTo(px,py):ctx.lineTo(px,py); });
+      if (outline.closed) ctx.closePath();
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // far field overlay
+  if ($('v_overlay').checked && res.farField){
+    drawPolarOverlay(ctx, res.farField, dx0+dw/2, dy0+dh/2, Math.min(dw,dh)/2*0.8, $('v_ffproc').value);
+  }
+
+  // colorbar
+  $('colorbar').style.background = colormapCSS(cmapName);
+  $('colorbarLabel').children[0].textContent = fmt(mx,3);
+  $('colorbarLabel').children[1].textContent = fmt((mx+mn)/2,3);
+  $('colorbarLabel').children[2].textContent = fmt(mn,3);
+}
+// Sample any material primitive down to a polyline (or polygon) in world (mm) coordinates,
+// for use by the Visualize-tab geometry overlay (reuses the same curve math as drawMaterial()).
+function materialOutlinePoints(m){
+  const steps = 80;
+  switch(m.type){
+    case 'line': return {closed:false, pts:[{x:m.x1,y:m.y1},{x:m.x2,y:m.y2}]};
+    case 'triangle': return {closed:true, pts:[{x:m.x1,y:m.y1},{x:m.x2,y:m.y2},{x:m.x3,y:m.y3}]};
+    case 'circle': {
+      const pts=[]; for(let i=0;i<=steps;i++){ const t=i/steps*2*Math.PI; pts.push({x:m.cx+m.r*Math.cos(t), y:m.cy+m.r*Math.sin(t)}); }
+      return {closed:true, pts};
+    }
+    case 'ellipse': {
+      const pts=[]; for(let i=0;i<=steps;i++){ const t=i/steps*2*Math.PI; pts.push({x:m.cx+m.rx*Math.cos(t), y:m.cy+m.ry*Math.sin(t)}); }
+      return {closed:true, pts};
+    }
+    case 'arc': {
+      let start=m.a0, end=m.a1; if (end<start) end+=360;
+      const pts=[]; for(let i=0;i<=steps;i++){ const deg=start+(end-start)*i/steps; const t=deg*Math.PI/180; pts.push({x:m.cx+m.r*Math.cos(t), y:m.cy+m.r*Math.sin(t)}); }
+      return {closed:false, pts};
+    }
+    case 'earc': {
+      let start=m.a0, end=m.a1; if (end<start) end+=360;
+      const pts=[]; for(let i=0;i<=steps;i++){ const deg=start+(end-start)*i/steps; const t=deg*Math.PI/180; pts.push({x:m.cx+m.rx*Math.cos(t), y:m.cy+m.ry*Math.sin(t)}); }
+      return {closed:false, pts};
+    }
+    case 'parc': {
+      const dxv=m.fx-m.vx, dyv=m.fy-m.vy; const p=Math.hypot(dxv,dyv)||1;
+      const dux=dxv/p, duy=dyv/p, nux=-duy, nuy=dux;
+      const pts=[]; for(let i=0;i<=steps;i++){ const v=-m.height/2+m.height*i/steps; const u=(v*v)/(4*p); pts.push({x:m.vx+u*dux+v*nux, y:m.vy+u*duy+v*nuy}); }
+      return {closed:false, pts};
+    }
+    case 'spline': return {closed:false, pts:m.points};
+    case 'func': {
+      const pts=[]; for(let i=0;i<=steps;i++){ const x=m.xmin+(m.xmax-m.xmin)*i/steps; const y=safeEvalFunc(m.expr,x)+(m.yoff||0); pts.push({x,y}); }
+      return {closed:false, pts};
+    }
+  }
+  return {closed:false, pts:[]};
+}
+// Approximate directivity: intensity U(phi) ~ pattern(phi)^2 (far-field magnitude squared),
+// normalized so that the *2D-angle* integral of U over the full circle equals the total
+// radiated power. D(phi) = 2*pi * U(phi) / P_total, with P_total = integral of U dphi.
+// This is the 2D/cylindrical analogue of directivity (2*pi in place of 4*pi steradians),
+// consistent with the plane-invariant (z-invariant) 2.5D formulation of this solver.
+function computeApproxDirectivity(anglesDeg, pattern){
+  const n = anglesDeg.length;
+  if (n<2) return {D:pattern.map(()=>0), D0:0};
+  const dPhi = Math.abs(anglesDeg[1]-anglesDeg[0]) * Math.PI/180;
+  const U = pattern.map(v=>v*v);
+  let P = 0; for (const u of U) P += u*dPhi;
+  if (P<=0) return {D:U.map(()=>0), D0:0};
+  const D = U.map(u => 2*Math.PI*u/P);
+  let D0=0; for (const d of D) if (d>D0) D0=d;
+  return {D, D0};
+}
+function drawPolarOverlay(ctx, ff, cx, cy, R, procMode){
+  const useTM = App.results && $('v_field').value.match(/E|S/);
+  const pat = useTM ? ff.patternTM : ff.patternTE;
+  let mx=0; for (const v of pat) if (v>mx) mx=v;
+  if (mx<=0) return;
+
+  let plotDb, dBLevels, caption;
+  if (procMode==='directivity'){
+    const {D, D0} = computeApproxDirectivity(ff.anglesDeg, pat);
+    const peakDb = 10*Math.log10(Math.max(D0,1e-9));
+    plotDb = D.map(d => 10*Math.log10(Math.max(d,1e-9)));
+    dBLevels = [peakDb, peakDb-10, peakDb-20, peakDb-30];
+    caption = (useTM?'TM (Ez,Hx,Hy)':'TE (Hz,Ex,Ey)')+' approx. directivity — peak D₀ = '+fmt(D0,3)+'  ('+fmt(peakDb,3)+' dBi)';
+  } else {
+    plotDb = pat.map(v => 20*Math.log10(Math.max(v/mx, 1e-6)));
+    dBLevels = [0,-10,-20,-30];
+    caption = (useTM?'TM (Ez,Hx,Hy)':'TE (Hz,Ex,Ey)')+' far-field, dB re: peak, floor at '+dBLevels[3]+' dB';
+  }
+  const dbTop = dBLevels[0], dbFloor = dBLevels[dBLevels.length-1];
+  const rForDb = (db)=> clamp((db-dbFloor)/(dbTop-dbFloor), 0, 1) * R;
+
+  ctx.save();
+  // grid rings + labels
+  ctx.strokeStyle='rgba(255,255,255,0.18)'; ctx.fillStyle='rgba(255,255,255,0.55)';
+  ctx.font='9.5px monospace'; ctx.lineWidth=1;
+  dBLevels.forEach(db=>{
+    const r = rForDb(db);
+    ctx.beginPath(); ctx.arc(cx,cy,r,0,2*Math.PI); ctx.stroke();
+    ctx.fillText(fmt(db,3)+(procMode==='directivity'?' dBi':' dB'), cx+4, cy-r-2);
+  });
+  // angular spokes every 30°, with degree labels
+  for (let deg=0; deg<360; deg+=30){
+    const a = deg*Math.PI/180;
+    const x2 = cx+R*Math.cos(a), y2 = cy-R*Math.sin(a);
+    ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(x2,y2); ctx.stroke();
+    const lx = cx+(R+13)*Math.cos(a), ly = cy-(R+13)*Math.sin(a);
+    ctx.fillText(deg+'°', lx-9, ly+3);
+  }
+  // pattern curve
+  ctx.strokeStyle = '#ffab3d'; ctx.lineWidth=2; ctx.globalAlpha=0.95;
+  ctx.beginPath();
+  for (let i=0;i<ff.anglesDeg.length;i++){
+    const a = ff.anglesDeg[i]*Math.PI/180;
+    const r = rForDb(plotDb[i]);
+    const x = cx + r*Math.cos(a), y = cy - r*Math.sin(a);
+    i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+  }
+  ctx.closePath(); ctx.stroke();
+  // caption
+  ctx.globalAlpha=1; ctx.fillStyle='rgba(255,171,61,0.9)'; ctx.font='10px sans-serif';
+  ctx.fillText(caption, cx-R, cy+R+16);
+  ctx.restore();
+}
+
+['v_field','v_func','v_source','v_cmap','v_scale','v_min','v_max','v_auto','v_overlay','v_geo','v_ffproc'].forEach(id=>{
+  const el = $(id);
+  on(el, el.type==='checkbox'||el.tagName==='SELECT' ? 'change':'input', drawVizCanvas);
+});
+on($('v_auto'),'change', ()=>{ $('v_min').disabled=$('v_auto').checked; $('v_max').disabled=$('v_auto').checked; drawVizCanvas(); });
+on($('v_field'),'change', updateFuncSelectorState);
+function updateFuncSelectorState(){
+  const field = $('v_field').value;
+  const applicable = !!COMPLEX_COMPONENTS[field];
+  $('v_func').disabled = !applicable;
+  $('v_func').title = applicable ? '' : 'Only applies to a single complex field component (Ex..Hz) — this quantity is already real-valued.';
+}
+updateFuncSelectorState();
+
+function setupPlayback(){
+  const res = App.results;
+  const has = res.frames && res.frames.length>0;
+  $('playbar').style.display = has ? 'flex' : 'none';
+  $('playSlider').max = has ? res.frames.length-1 : 0;
+  $('playSlider').value = 0;
+}
+on($('playSlider'),'input', ()=>{
+  $('playLabel').textContent = 't = '+(App.results.frames[parseInt($('playSlider').value)].t*1e9).toFixed(3)+' ns';
+  drawVizCanvas();
+});
+on($('playBtn'),'click', ()=>{
+  App.playing = !App.playing;
+  $('playBtn').textContent = App.playing? '⏸' : '▶';
+  if (App.playing){
+    App.playTimer = setInterval(()=>{
+      const s=$('playSlider'); let v=parseInt(s.value)+1;
+      if (v>parseInt(s.max)) v=0;
+      s.value=v; s.dispatchEvent(new Event('input'));
+    },60);
+  } else { clearInterval(App.playTimer); }
+});
+on($('v_polarBtn'),'click', ()=>{
+  $('v_overlay').checked = true; drawVizCanvas();
+});
+
+/* =========================================================================
+   8. EXPORT / SAVE / LOAD
+   ========================================================================= */
+function downloadJSON(obj, filename){
+  const blob = new Blob([JSON.stringify(obj)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+}
+on($('exportResultsBtn'),'click', ()=>{
+  if (!App.results) return;
+  const ff = App.results.farField;
+  const dirTM = computeApproxDirectivity(ff.anglesDeg, ff.patternTM);
+  const dirTE = computeApproxDirectivity(ff.anglesDeg, ff.patternTE);
+  downloadJSON({
+    meta:{ generator:'Violet Mango', version: APP_VERSION, freqGHz: App.results.freqGHz, Nx:App.results.Nx, Ny:App.results.Ny, dx_mm:App.results.dx, originX_mm:App.results.originX, originY_mm:App.results.originY, planeZ_mm: App.project.grid.planeZ },
+    phasorFields: App.results.phasor,
+    farField: Object.assign({}, ff, {
+      approxDirectivityTM: dirTM.D, approxDirectivityTM_peak: dirTM.D0,
+      approxDirectivityTE: dirTE.D, approxDirectivityTE_peak: dirTE.D0
+    })
+  }, 'violet-mango-results.json');
+});
+on($('saveProjectBtn'),'click', ()=>{
+  downloadJSON({ generator:'Violet Mango project', version: APP_VERSION, project: App.project }, 'violet-mango-project.json');
+});
+on($('loadProjectBtn'),'click', ()=> $('loadProjectInput').click());
+on($('loadProjectInput'),'change', (e)=>{
+  const file = e.target.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ()=>{
+    try{
+      const data = JSON.parse(reader.result);
+      if (data.project){
+        App.project = data.project;
+        App.selectedId=null; App.results=null;
+        syncFormsFromProject();
+        renderLists(); fitView(); drawGeoCanvas();
+        log && log('Project loaded.');
+      }
+    }catch(err){ alert('Could not parse project file: '+err.message); }
+  };
+  reader.readAsText(file);
+});
+function syncFormsFromProject(){
+  const g=App.project.grid, s=App.project.solver;
+  $('p_freq').value=g.freqGHz; $('p_w').value=g.domainW; $('p_h').value=g.domainH; $('p_cpw').value=g.cellsPerWL; $('p_z').value=g.planeZ;
+  $('p_cx').value=g.centerX||0; $('p_cy').value=g.centerY||0;
+  $('p_pml').value=s.pmlCells; $('p_pmlm').value=s.pmlM; $('p_cfl').value=s.cfl; $('p_maxcycles').value=s.maxCycles;
+  $('p_conv').value=s.convThresh; $('p_convEnable').checked=s.convEnable; $('p_ffmargin').value=s.ffMargin; $('p_ffres').value=s.ffResDeg;
+  updateGridSummary();
+}
+
+/* ---------------------------- init ---------------------------- */
+function init(){
+  $('verBadge').textContent = 'v'+APP_VERSION;
+  $('verBadgeLegal').textContent = 'Version '+APP_VERSION;
+  resizeCanvases();
+  fitView();
+  updateGridSummary();
+  renderLists();
+  drawGeoCanvas();
+  $('v_min').disabled=true; $('v_max').disabled=true;
+}
+init();
+</script>
+</body>
+</html>
