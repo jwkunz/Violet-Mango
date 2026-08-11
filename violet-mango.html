@@ -157,6 +157,46 @@ label.chk{display:flex; align-items:center; gap:6px; font-size:12px; color:var(-
 ::-webkit-scrollbar{ width:9px; height:9px; }
 ::-webkit-scrollbar-thumb{ background:var(--line); border-radius:6px; }
 ::-webkit-scrollbar-track{ background:transparent; }
+
+/* ---- Lens wizard modal ---- */
+.modal-overlay{
+  display:none; position:fixed; inset:0; background:rgba(5,6,9,0.72); backdrop-filter:blur(3px);
+  z-index:1000; align-items:center; justify-content:center;
+}
+.modal-box{
+  width:560px; max-width:92vw; max-height:88vh; overflow-y:auto;
+  background:var(--panel); border:1px solid var(--violet-dim); border-radius:14px;
+  box-shadow:0 20px 60px rgba(0,0,0,0.5); padding:22px 26px 20px;
+}
+.modal-box h2{ margin:0 0 2px; font-size:17px; display:flex; align-items:center; gap:8px; }
+.modal-box .modal-sub{ color:var(--dim); font-size:11.5px; margin-bottom:18px; }
+.wiz-step{ margin-bottom:20px; padding-bottom:18px; border-bottom:1px solid var(--line); }
+.wiz-step:last-of-type{ border-bottom:none; }
+.wiz-step h3{
+  font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--mango); margin:0 0 10px; font-weight:700;
+  display:flex; align-items:center; gap:8px;
+}
+.wiz-step h3 .n{
+  width:18px; height:18px; border-radius:50%; background:var(--mango); color:#0b0c10; font-size:10.5px;
+  display:inline-flex; align-items:center; justify-content:center; font-weight:800;
+}
+.wiz-typegrid{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; }
+.wiz-typecard{
+  background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:9px 8px; cursor:pointer;
+  text-align:center; font-size:11px; color:var(--dim);
+}
+.wiz-typecard:hover{ border-color:var(--violet); }
+.wiz-typecard.active{ border-color:var(--mango); color:var(--text); background:rgba(255,171,61,0.1); }
+.wiz-typecard .glyph{ font-size:22px; display:block; margin-bottom:4px; }
+.wiz-radiomode{ display:flex; gap:14px; margin-bottom:10px; }
+.wiz-radiomode label{ display:flex; align-items:center; gap:6px; font-size:12px; color:var(--dim); cursor:pointer; }
+.wiz-readout{
+  background:var(--bg); border:1px solid var(--line); border-radius:7px; padding:8px 12px; font-family:var(--mono);
+  font-size:12px; color:var(--good); margin-top:8px;
+}
+.wiz-warn{ color:var(--mango); font-size:11px; margin-top:6px; }
+.modal-footer{ display:flex; justify-content:flex-end; gap:10px; margin-top:6px; }
+
 </style>
 </head>
 <body>
@@ -211,6 +251,7 @@ label.chk{display:flex; align-items:center; gap:6px; font-size:12px; color:var(-
           <button data-tool="triangle">Triangle</button>
           <button data-tool="circle">Circle</button>
           <button data-tool="ellipse">Ellipse</button>
+          <button data-tool="lens" style="border-color:var(--mango); color:var(--mango);">◐ Dielectric Lens…</button>
         </div>
         <div class="hint" id="toolHintMat">Click "Select" to pick &amp; edit a material region. Use the shape tools to draw dielectric/conductor regions. Press <b>Enter</b> to finish a spline, <b>Esc</b> to cancel a draw.</div>
 
@@ -236,8 +277,10 @@ label.chk{display:flex; align-items:center; gap:6px; font-size:12px; color:var(-
           <button data-tool="dipole">+ Dipole</button>
           <button data-tool="wire">+ Wire</button>
           <button data-tool="loop">+ Loop</button>
+          <button data-tool="port">+ Lumped Port</button>
+          <button data-tool="aperture">+ Aperture</button>
         </div>
-        <div class="hint" id="toolHintSrc">Click "Select" to pick &amp; edit a source. Use the source tools to place current sources — full 3D position, projected onto the grid plane. Materials are shown faint for reference.</div>
+        <div class="hint" id="toolHintSrc">Click "Select" to pick &amp; edit a source. Use the source tools to place current sources — full 3D position, projected onto the grid plane. Materials are shown faint for reference. Lumped Port and Aperture are field sources (impedance-loaded / directly-imposed field), not simple impressed currents — see the Help tab for details.</div>
 
         <h3 class="section">Sources <span style="color:var(--dim); font-weight:400;">(<span id="srcCount">0</span>)</span></h3>
         <div class="objlist" id="srcList"></div>
@@ -296,6 +339,14 @@ label.chk{display:flex; align-items:center; gap:6px; font-size:12px; color:var(-
     <!-- ============ VISUALIZE TAB ============ -->
     <section class="view" id="view-visualize" style="flex-direction:column;">
       <div class="viz-controls">
+        <div class="field">
+          <label>Coordinate System</label>
+          <select id="v_coord">
+            <option value="cartesian" selected>Cartesian (x,y,z)</option>
+            <option value="cylindrical">Cylindrical (&rho;,&phi;,z)</option>
+            <option value="spherical">Spherical (r,&theta;,&phi;)</option>
+          </select>
+        </div>
         <div class="field">
           <label>Field / Quantity</label>
           <select id="v_field">
@@ -469,18 +520,45 @@ Ms = -n&#770; &times; E       <span class="c">(equivalent magnetic surface curre
         <p>Material regions are rasterized onto the grid from geometric primitives, split into two families:</p>
         <table>
           <tr><th>Surface primitives (open curves, w/ thickness)</th><th>Closed-region primitives (filled area)</th></tr>
-          <tr><td>Line, Circular Arc, Elliptical Arc, Parabolic Arc, Spline, ƒ(x)</td><td>Triangle, Circle, Ellipse</td></tr>
+          <tr><td>Line, Circular Arc, Elliptical Arc, Parabolic Arc, Spline, ƒ(x)</td><td>Triangle, Circle, Ellipse, Dielectric Lens</td></tr>
         </table>
         <p>Each material carries relative permittivity &epsilon;r, relative permeability &mu;r, conductivity &sigma;, and an optional PEC flag (which overrides &epsilon;r/&mu;r/&sigma; with a perfect-conductor boundary condition). The elliptical arc uses the ellipse's native parametric angle convention; the parabolic arc is defined by vertex, focus, and aperture height, matching standard reflector-antenna convention.</p>
 
+        <h4>Dielectric Lens</h4>
+        <p>Placed via a guided wizard (button in the Closed Region toolbar) rather than click-drawn directly. A lens is defined by two independent surfaces — each flat, convex, or concave, with its own radius of curvature — plus an aperture span, center thickness, and rotation. The wizard offers six canonical types (Biconvex, Biconcave, Plano-Convex, Plano-Concave, Meniscus Converging/Diverging) and can derive the required radius (or radii) from a target focal length using the thin-lens form of the Lensmaker's equation:</p>
+        <div class="doc-eq">1/f = (n - 1) &middot; (1/R1 - 1/R2)</div>
+        <p>After placement, every parameter — including the surface types and radii — remains editable in the Materials panel, with a live focal-length readout, just like any other region.</p>
+
         <h3>7. Sources</h3>
-        <p>Sources are defined in full 3D and projected onto the grid plane (a warning is shown if a source sits far from the plane's Z height). Three types are supported: point dipoles (with a 3D orientation vector), wire segments, and loops — the latter two support a spatial current taper (uniform or sinusoidal) along their length.</p>
+        <p>Sources are defined in full 3D and projected onto the grid plane (a warning is shown if a source sits far from the plane's Z height). Five types are supported: point dipoles (with a 3D orientation vector), wire segments, loops, lumped ports, and rectangular apertures — wire/loop support a spatial current taper (uniform or sinusoidal) along their length.</p>
+        <p>The last two are <b>field sources</b>, not simple impressed currents, and are handled differently in the update equations:</p>
+        <h4>Lumped Port</h4>
+        <p>Modeled as the Norton equivalent of a voltage source V0 in series with an impedance R: an impressed current I0&nbsp;=&nbsp;V0/R, <i>plus</i> a shunt conductance 1/R added to the local cell's loss coefficients. That shunt term is what makes it a real terminal impedance rather than a plain current source — a low-impedance port behaves like a near-short (heavily damping local field buildup even though it draws more current), while a high-impedance port allows more field buildup, mirroring real Thevenin/Norton port behavior. The equivalent conductivity is:</p>
+        <div class="doc-eq">&sigma;<sub>port</sub> = 1 / (R &middot; &Delta;x)</div>
+        <p>added on top of whatever material/PML loss the cell already has, at each of the port's feed points.</p>
+        <h4>Rectangular Aperture</h4>
+        <p>An impressed-<b>field</b> source: rather than adding a current term, the chosen field component (set by its 3D orientation vector, same convention as the dipole) is <i>hard-set</i> directly at each sample point across the aperture, every timestep — overwriting whatever the normal FDTD update computed there, following one of three spatial distributions across the aperture's span:</p>
+        <ul>
+          <li><b>Uniform</b> — constant amplitude across the full span.</li>
+          <li><b>Sinusoidal</b> — sin(&pi;&middot;u) for u&isin;[0,1], zero at both edges, matching the dominant-mode profile of a rectangular waveguide aperture.</li>
+          <li><b>Gaussian</b> — exp(&minus;t&sup2;/2&sigma;&sup2;), t the centered position &isin;[&minus;0.5,0.5], with &sigma; configurable as a fraction of the aperture span (a typical quasi-optical beam-launch profile).</li>
+        </ul>
 
         <h3>8. Visualization</h3>
         <p>Any of the six complex phasor components can be viewed through a selectable function: Re, Im, Arg (rad/deg), Abs, or Abs&sup2;. Derived real-valued quantities — |E|, |H|, and the Poynting vector components Sx, Sy, Sz, |S| — are also available. Color scales support linear, log, and dB modes with auto-ranging (dB auto-range fixes the floor 60&nbsp;dB below the computed peak) or fully manual min/max.</p>
 
+        <h4>Coordinate System (post-processing)</h4>
+        <p>Fields are always solved in Cartesian coordinates, but since the 2.5D formulation already gives a full 3D vector (Ex,Ey,Ez / Hx,Hy,Hz) at every grid point, they can be re-projected for viewing into cylindrical (&rho;,&phi;,z) or spherical (r,&theta;,&phi;) bases <b>without re-running the solver</b> — a pure post-processing step, selected via the Coordinate System control in the Visualize tab. Both are referenced from the world origin (x=y=0), and the spherical polar angle additionally uses the grid plane's Z height:</p>
+        <div class="doc-eq">&phi; = atan2(y, x)
+&theta; = atan2(&radic;(x&sup2;+y&sup2;), z_plane)
+
+E&rho; =  Ex&middot;cos&phi; + Ey&middot;sin&phi;         E_r     =  Ex&middot;sin&theta;cos&phi; + Ey&middot;sin&theta;sin&phi; + Ez&middot;cos&theta;
+E&phi; = -Ex&middot;sin&phi; + Ey&middot;cos&phi;         E_&theta;  =  Ex&middot;cos&theta;cos&phi; + Ey&middot;cos&theta;sin&phi; - Ez&middot;sin&theta;
+Ez unchanged                        E_&phi;   =  same formula as cylindrical E&phi;</div>
+        <p>For phasor views the rotation is applied to the real and imaginary parts separately (the coefficients above are real, so this is exactly equivalent to rotating the complex phasor), then the selected function (Re/Im/Arg/Abs/Abs&sup2;) is applied to the rotated result. The Poynting vector is rotated the same way, since it's already a real 3-vector at each point. |E|, |H|, and |S| are rotation-invariant and read identically in any coordinate system.</p>
+
         <h3>9. Data Export</h3>
-        <p>Two independent JSON exports are available: a <b>results</b> export (steady-state phasor fields, far-field pattern and approximate directivity, and grid metadata) for downstream processing in Python/MATLAB/etc., and a <b>project</b> export (complete geometry, sources, and solver settings) for saving and reloading your setup.</p>
+        <p>Two independent JSON exports are available: a <b>results</b> export (steady-state phasor fields, far-field pattern and approximate directivity, and grid metadata) for downstream processing in Python/MATLAB/etc., and a <b>project</b> export (complete geometry, sources, and solver settings) for saving and reloading your setup. Exported phasor fields are always Cartesian — the coordinate-system control only affects the in-app view.</p>
       </div></div>
     </section>
 
@@ -521,6 +599,11 @@ DEALINGS IN THE SOFTWARE.</div>
       </div></div>
     </section>
   </main>
+
+  <!-- Dielectric Lens wizard modal -->
+  <div class="modal-overlay" id="lensModalOverlay">
+    <div class="modal-box" id="lensModalBox"></div>
+  </div>
 </div>
 
 <script>
@@ -545,7 +628,7 @@ const Z0 = 376.730313668;
 
 // Single source of truth for the app version — read by the header badge,
 // the Legal tab, and stamped into every exported results/project JSON file.
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.3.0';
 
 /* ---------------------------- 1. STATE ---------------------------- */
 const App = {
@@ -559,6 +642,7 @@ const App = {
   },
   selectedId: null,
   draft: null,           // in-progress shape being drawn
+  pendingLens: null,     // parameters collected by the Lens wizard, awaiting a placement click
   view: { scale: 1, ox: 0, oy: 0 },  // canvas transform (world mm -> screen px)
   results: null,          // populated after a run completes
   worker: null,
@@ -672,6 +756,8 @@ function defaultSource(type, pts){
   if (type==='dipole') return Object.assign(base,{x:pts[0].x,y:pts[0].y,dx:0,dy:0,dz:1});
   if (type==='wire') return Object.assign(base,{x1:pts[0].x,y1:pts[0].y,z1:g.planeZ,x2:pts[1].x,y2:pts[1].y,z2:g.planeZ,taper:'uniform',npts:12});
   if (type==='loop') return Object.assign(base,{x:pts[0].x,y:pts[0].y,radius:Math.hypot(pts[1].x-pts[0].x,pts[1].y-pts[0].y),nx:0,ny:0,nz:1,taper:'uniform',npts:16});
+  if (type==='port') return Object.assign(base,{x1:pts[0].x,y1:pts[0].y,z1:g.planeZ,x2:pts[1].x,y2:pts[1].y,z2:g.planeZ,impedance:50,npts:1,label:'port',amplitude:1});
+  if (type==='aperture') return Object.assign(base,{x1:pts[0].x,y1:pts[0].y,z1:g.planeZ,x2:pts[1].x,y2:pts[1].y,z2:g.planeZ,dx:0,dy:0,dz:1,distribution:'uniform',gaussianSigma:0.25,npts:20,label:'aperture'});
   return base;
 }
 
@@ -689,6 +775,35 @@ function pointInTriangle(px,py,x1,y1,x2,y2,x3,y3){
   const d3=(px-x1)*(y3-y1)-(x3-x1)*(py-y1);
   const hasNeg=(d1<0)||(d2<0)||(d3<0), hasPos=(d1>0)||(d2>0)||(d3>0);
   return !(hasNeg && hasPos);
+}
+// Axial position of a lens surface at height v from the optical axis.
+// u0 = nominal vertex position along the axis; R = radius of curvature magnitude;
+// type = 'flat'|'convex'|'concave'; isLeft = which of the two lens surfaces this is.
+// Convex bulges away from the lens body (circle center inside); concave caves into the
+// lens body (circle center outside). Returns null if v exceeds the surface's radius
+// (geometrically invalid — the arc doesn't reach that height).
+function lensSurfaceU(v, u0, R, type, isLeft){
+  if (type==='flat' || !R) return u0;
+  if (R < Math.abs(v)) return null;
+  const s = Math.sqrt(R*R - v*v);
+  if (isLeft){
+    if (type==='convex') return (u0+R) - s;
+    if (type==='concave') return (u0-R) + s;
+  } else {
+    if (type==='convex') return (u0-R) + s;
+    if (type==='concave') return (u0+R) - s;
+  }
+  return u0;
+}
+// Thin-lens (Lensmaker's) equation, using a sign convention where a convex-outward
+// surface and a concave-outward surface on the SAME side of the lens contribute with
+// opposite sign, chosen so biconvex/plano-convex lenses come out positive (converging)
+// and biconcave/plano-concave come out negative (diverging).
+function thinLensFocalLength(n, leftType, leftR, rightType, rightR){
+  const invR1 = (leftType==='flat'||!leftR) ? 0 : (leftType==='convex' ? 1/leftR : -1/leftR);
+  const invR2 = (rightType==='flat'||!rightR) ? 0 : (rightType==='concave' ? 1/rightR : -1/rightR);
+  const invF = (n-1)*(invR1-invR2);
+  return Math.abs(invF)>1e-12 ? 1/invF : Infinity;
 }
 function safeEvalFunc(expr, x){
   try{
@@ -748,6 +863,19 @@ function materialInsideCell(m, x, y){
       if (x < m.xmin || x > m.xmax) return false;
       const fy = safeEvalFunc(m.expr, x) + (m.yoff||0);
       return Math.abs(y-fy) <= w;
+    }
+    case 'lens': {
+      const rad = (m.rotationDeg||0)*Math.PI/180;
+      const dx = x-m.cx, dy = y-m.cy;
+      // inverse-rotate the query point into the lens's local (optical-axis) frame
+      const u = dx*Math.cos(-rad) - dy*Math.sin(-rad);
+      const v = dx*Math.sin(-rad) + dy*Math.cos(-rad);
+      if (Math.abs(v) > m.span/2) return false;
+      const u0 = -m.centerThickness/2, u1 = m.centerThickness/2;
+      const leftU = lensSurfaceU(v, u0, m.leftR, m.leftType, true);
+      const rightU = lensSurfaceU(v, u1, m.rightR, m.rightType, false);
+      if (leftU===null || rightU===null) return false;
+      return u >= leftU && u <= rightU;
     }
   }
   return false;
@@ -857,6 +985,25 @@ function strokeStyleFor(ctx, m, sel){
   ctx.fillStyle = sel ? 'rgba(255,171,61,0.18)' : (m.pec? 'rgba(155,107,255,0.18)':'rgba(94,214,168,0.14)');
   ctx.lineWidth = sel?2.5:1.6;
 }
+function lensWorldPoint(m, u, v){
+  const rad = (m.rotationDeg||0)*Math.PI/180;
+  return { x: m.cx + u*Math.cos(rad) - v*Math.sin(rad), y: m.cy + u*Math.sin(rad) + v*Math.cos(rad) };
+}
+function lensLocalOutline(m, steps){
+  const H = m.span, u0=-m.centerThickness/2, u1=m.centerThickness/2;
+  const pts=[];
+  for (let i=0;i<=steps;i++){
+    const v = -H/2 + H*i/steps;
+    const u = lensSurfaceU(v, u0, m.leftR, m.leftType, true);
+    pts.push({u: u===null? u0 : u, v});
+  }
+  for (let i=steps;i>=0;i--){
+    const v = -H/2 + H*i/steps;
+    const u = lensSurfaceU(v, u1, m.rightR, m.rightType, false);
+    pts.push({u: u===null? u1 : u, v});
+  }
+  return pts;
+}
 function drawMaterial(ctx, m, sel){
   strokeStyleFor(ctx, m, sel);
   if (m.type==='line'){
@@ -919,6 +1066,23 @@ function drawMaterial(ctx, m, sel){
       i===0?ctx.moveTo(sx,sy):ctx.lineTo(sx,sy);
     }
     ctx.stroke();
+  } else if (m.type==='lens'){
+    const pts = lensLocalOutline(m, 40);
+    ctx.beginPath();
+    pts.forEach((p,i)=>{
+      const wp = lensWorldPoint(m, p.u, p.v);
+      const [sx,sy] = w2s(wp.x, wp.y);
+      i===0?ctx.moveTo(sx,sy):ctx.lineTo(sx,sy);
+    });
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    // dashed optical-axis line through the lens center
+    const axisLen = m.span*0.7 + (m.centerThickness||0);
+    const p0 = lensWorldPoint(m, -axisLen/2, 0), p1 = lensWorldPoint(m, axisLen/2, 0);
+    const [ax0,ay0]=w2s(p0.x,p0.y), [ax1,ay1]=w2s(p1.x,p1.y);
+    ctx.save(); ctx.setLineDash([3,3]); ctx.globalAlpha=0.45;
+    ctx.beginPath(); ctx.moveTo(ax0,ay0); ctx.lineTo(ax1,ay1); ctx.stroke();
+    ctx.restore();
   }
 }
 function drawSource(ctx, s, sel){
@@ -939,6 +1103,37 @@ function drawSource(ctx, s, sel){
     ctx.setLineDash([4,3]);
     ctx.beginPath(); ctx.arc(cx,cy,s.radius*App.view.scale,0,7); ctx.stroke();
     ctx.setLineDash([]);
+  } else if (s.type==='port'){
+    const a=w2s(s.x1,s.y1), b=w2s(s.x2,s.y2);
+    // zig-zag "resistor" glyph along the gap to distinguish it from a plain wire
+    const segs=6, dxp=(b[0]-a[0])/segs, dyp=(b[1]-a[1])/segs;
+    const nx=-dyp, ny=dxp; const nlen=Math.hypot(nx,ny)||1; const px=nx/nlen*5, py=ny/nlen*5;
+    ctx.beginPath(); ctx.moveTo(a[0],a[1]);
+    for (let k=1;k<segs;k++){
+      const bx=a[0]+dxp*k, by=a[1]+dyp*k;
+      ctx.lineTo(bx+(k%2?px:-px), by+(k%2?py:-py));
+    }
+    ctx.lineTo(b[0],b[1]);
+    ctx.stroke();
+    ctx.beginPath(); ctx.arc(a[0],a[1],3,0,7); ctx.arc(b[0],b[1],3,0,7); ctx.fill();
+    ctx.font='10px monospace'; ctx.fillText((s.impedance||50)+'Ω', (a[0]+b[0])/2+6, (a[1]+b[1])/2-6);
+  } else if (s.type==='aperture'){
+    const a=w2s(s.x1,s.y1), b=w2s(s.x2,s.y2);
+    ctx.beginPath(); ctx.moveTo(a[0],a[1]); ctx.lineTo(b[0],b[1]); ctx.stroke();
+    // sketch the field-distribution profile as a small curve offset above the aperture line
+    const steps=24, dxp=(b[0]-a[0])/steps, dyp=(b[1]-a[1])/steps;
+    const nx=-dyp, ny=dxp; const nlen=Math.hypot(nx,ny)||1; const ux2=nx/nlen, uy2=ny/nlen;
+    ctx.save(); ctx.globalAlpha=0.8; ctx.beginPath();
+    for (let k=0;k<=steps;k++){
+      const tt=k/steps, tc=tt-0.5;
+      let taper=1;
+      if (s.distribution==='sinusoidal') taper=Math.sin(Math.PI*tt);
+      else if (s.distribution==='gaussian'){ const sg=Math.max(s.gaussianSigma||0.25,0.02); taper=Math.exp(-(tc*tc)/(2*sg*sg)); }
+      const bx=a[0]+dxp*k+ux2*taper*12, by=a[1]+dyp*k+uy2*taper*12;
+      k===0?ctx.moveTo(bx,by):ctx.lineTo(bx,by);
+    }
+    ctx.stroke(); ctx.restore();
+    ctx.beginPath(); ctx.arc(a[0],a[1],3,0,7); ctx.arc(b[0],b[1],3,0,7); ctx.fill();
   }
 }
 function drawDraft(ctx, d){
@@ -967,13 +1162,209 @@ const TOOL_HINTS = {
   func:'A function curve is added directly — edit its expression in the list below.',
   dipole:'Click to place a point dipole (edit orientation vector after creation).',
   wire:'Click start point, then end point of the wire source.',
-  loop:'Click center, then click to set the loop radius.'
+  loop:'Click center, then click to set the loop radius.',
+  lens:'Click in the scene to place the lens center.',
+  port:'Click the gap start point, then the gap end point (defines the port\'s driven-field direction and length).',
+  aperture:'Click the aperture start point, then the end point. Field polarization is set separately after creation.'
 };
+/* ----- Dielectric Lens wizard ----- */
+const LENS_TYPE_INFO = {
+  biconvex:        { glyph:'●', label:'Biconvex',        left:'convex',  right:'convex'  },
+  biconcave:       { glyph:'○', label:'Biconcave',       left:'concave', right:'concave' },
+  planoconvex:     { glyph:'◗', label:'Plano-Convex',    left:'flat',    right:'convex'  },
+  planoconcave:    { glyph:'◖', label:'Plano-Concave',   left:'flat',    right:'concave' },
+  meniscusConv:    { glyph:'◐', label:'Meniscus (Converging)', left:'convex',  right:'concave' },
+  meniscusDiv:     { glyph:'◑', label:'Meniscus (Diverging)',  left:'concave', right:'convex'  }
+};
+const LensWizard = {
+  state: null,
+  toolbars: null,
+  hintId: null,
+  open(toolbars, hintId){
+    this.toolbars = toolbars; this.hintId = hintId;
+    this.state = {
+      n: 1.50, epsR: 2.25,
+      lensType: 'biconvex',
+      radiusMode: 'byFocal', // 'byFocal' | 'byRadius'
+      targetF: 100,
+      R: 50,          // shared symmetric radius (biconvex/biconcave/plano-*)
+      leftR: 60, rightR: 60, // independent radii (meniscus)
+      span: 40,
+      centerThickness: 6,
+      rotationDeg: 0
+    };
+    this.render();
+    $('lensModalOverlay').style.display='flex';
+  },
+  cancel(){
+    $('lensModalOverlay').style.display='none';
+    this.state=null;
+    resetToolbarTo(['toolbarMatSurface','toolbarMatRegion'], 'select');
+  },
+  typeInfo(){ return LENS_TYPE_INFO[this.state.lensType]; },
+  isMeniscus(){ return this.state.lensType.startsWith('meniscus'); },
+  isSingleCurved(){ return this.state.lensType.startsWith('plano'); },
+  currentLeftR(){ const st=this.state; return this.isMeniscus()? st.leftR : (this.typeInfo().left==='flat'?0:st.R); },
+  currentRightR(){ const st=this.state; return this.isMeniscus()? st.rightR : (this.typeInfo().right==='flat'?0:st.R); },
+  computeF(){
+    const ti=this.typeInfo(), st=this.state;
+    return thinLensFocalLength(st.n, ti.left, this.currentLeftR(), ti.right, this.currentRightR());
+  },
+  applyFocalTarget(){
+    const st=this.state, ti=this.typeInfo();
+    const f = st.targetF;
+    if (this.isMeniscus()){
+      // Solve rightR from leftR + target f via the thin-lens equation.
+      const invR1 = ti.left==='flat'||!st.leftR ? 0 : (ti.left==='convex'? 1/st.leftR : -1/st.leftR);
+      const invF = 1/f;
+      const invR2 = invR1 - invF/(st.n-1);
+      if (Math.abs(invR2) > 1e-9){
+        const R2 = 1/invR2;
+        st.rightR = Math.abs(R2);
+        // if the solved sign disagrees with the selected meniscus type's convexity, warn via render()
+      }
+    } else if (this.isSingleCurved()){
+      st.R = Math.abs((st.n-1)*f);
+    } else {
+      st.R = Math.abs(2*(st.n-1)*f);
+    }
+    this.render();
+  },
+  setField(key, val){
+    const st=this.state;
+    if (key==='n'){ st.n=val; st.epsR=val*val; }
+    else if (key==='epsR'){ st.epsR=val; st.n=Math.sqrt(Math.max(val,1e-6)); }
+    else st[key]=val;
+    this.render();
+  },
+  place(){
+    const st=this.state, ti=this.typeInfo();
+    App.pendingLens = {
+      epsR: st.epsR, muR:1, sigma:0,
+      leftType: ti.left, leftR: this.currentLeftR(),
+      rightType: ti.right, rightR: this.currentRightR(),
+      span: st.span, centerThickness: st.centerThickness, rotationDeg: st.rotationDeg||0
+    };
+    $('lensModalOverlay').style.display='none';
+    App.tool = 'lens';
+    App.draft = null; App.selectedId = null;
+    $(this.hintId).innerHTML = TOOL_HINTS.lens;
+    renderLists(); drawGeoCanvas();
+    this.state = null;
+  },
+  render(){
+    const st = this.state, ti = this.typeInfo();
+    const f = this.computeF();
+    const fDisp = isFinite(f) ? fmt(f,4)+' mm' : '∞ (afocal)';
+    let html = '';
+    html += '<h2>◐ Dielectric Lens Wizard</h2>';
+    html += '<div class="modal-sub">Configure a lens, then click "Place in Scene" and click the canvas to position it.</div>';
+
+    html += '<div class="wiz-step"><h3><span class="n">1</span>Material</h3>';
+    html += '<div class="row2">';
+    html += '<div class="field"><label>Index of refraction n</label><input type="number" id="lw_n" step="0.01" min="1" value="'+st.n+'"></div>';
+    html += '<div class="field"><label>Relative permittivity &epsilon;r</label><input type="number" id="lw_epsR" step="0.01" min="1" value="'+fmt(st.epsR,4)+'"></div>';
+    html += '</div></div>';
+
+    html += '<div class="wiz-step"><h3><span class="n">2</span>Canonical Lens Type</h3>';
+    html += '<div class="wiz-typegrid">';
+    for (const key in LENS_TYPE_INFO){
+      const t = LENS_TYPE_INFO[key];
+      html += '<div class="wiz-typecard'+(st.lensType===key?' active':'')+'" data-lenstype="'+key+'"><span class="glyph">'+t.glyph+'</span>'+t.label+'</div>';
+    }
+    html += '</div></div>';
+
+    html += '<div class="wiz-step"><h3><span class="n">3</span>Focal Length &amp; Radii</h3>';
+    if (this.isMeniscus()){
+      html += '<div class="row2">';
+      html += '<div class="field"><label>R1 — first surface ('+ti.left+', mm)</label><input type="number" id="lw_leftR" step="1" min="0.1" value="'+st.leftR+'"></div>';
+      html += '<div class="field"><label>R2 — second surface ('+ti.right+', mm)</label><input type="number" id="lw_rightR" step="1" min="0.1" value="'+st.rightR+'"></div>';
+      html += '</div>';
+      html += '<div class="row2" style="align-items:end;">';
+      html += '<div class="field"><label>Target focal length (mm)</label><input type="number" id="lw_targetF" step="1" value="'+st.targetF+'"></div>';
+      html += '<button class="btn small" id="lw_solveR2" style="height:32px;">Solve R2 from target f</button>';
+      html += '</div>';
+    } else {
+      html += '<div class="wiz-radiomode">';
+      html += '<label><input type="radio" name="lw_radiusMode" value="byFocal" '+(st.radiusMode==='byFocal'?'checked':'')+'> By target focal length</label>';
+      html += '<label><input type="radio" name="lw_radiusMode" value="byRadius" '+(st.radiusMode==='byRadius'?'checked':'')+'> By radius directly</label>';
+      html += '</div>';
+      if (st.radiusMode==='byFocal'){
+        html += '<div class="field"><label>Target focal length (mm)</label><input type="number" id="lw_targetF" step="1" value="'+st.targetF+'"></div>';
+      } else {
+        const curvedLabel = this.isSingleCurved() ? 'Radius of curvature — curved surface (mm)' : 'Radius of curvature — both surfaces (mm)';
+        html += '<div class="field"><label>'+curvedLabel+'</label><input type="number" id="lw_R" step="1" min="0.1" value="'+st.R+'"></div>';
+      }
+    }
+    html += '<div class="wiz-readout">Resulting focal length: '+fDisp+'</div>';
+    if ((this.currentLeftR() && this.currentLeftR()<st.span/2) || (this.currentRightR() && this.currentRightR()<st.span/2)){
+      html += '<div class="wiz-warn">⚠ Radius is smaller than half the aperture span — surface arc won\'t reach the lens edge. Increase the radius or reduce the span.</div>';
+    }
+    html += '</div>';
+
+    html += '<div class="wiz-step"><h3><span class="n">4</span>Span &amp; Thickness</h3>';
+    html += '<div class="row3">';
+    html += '<div class="field"><label>Aperture span (mm)</label><input type="number" id="lw_span" step="1" min="1" value="'+st.span+'"></div>';
+    html += '<div class="field"><label>Center thickness (mm)</label><input type="number" id="lw_thick" step="1" min="0.1" value="'+st.centerThickness+'"></div>';
+    html += '<div class="field"><label>Rotation (deg)</label><input type="number" id="lw_rot" step="1" value="'+st.rotationDeg+'"></div>';
+    html += '</div></div>';
+
+    html += '<div class="wiz-step" style="border-bottom:none; margin-bottom:6px;"><h3><span class="n">5</span>Place</h3>';
+    html += '<div class="hint">Click "Place in Scene", then click anywhere in the Materials canvas to set the lens center.</div>';
+    html += '</div>';
+
+    html += '<div class="modal-footer">';
+    html += '<button class="btn" id="lw_cancel">Cancel</button>';
+    html += '<button class="btn mango" id="lw_place">Place in Scene</button>';
+    html += '</div>';
+
+    $('lensModalBox').innerHTML = html;
+    this.wireEvents();
+  },
+  wireEvents(){
+    const st = this.state;
+    on($('lw_n'),'input', ()=> this.setField('n', parseFloat($('lw_n').value)||1));
+    on($('lw_epsR'),'input', ()=> this.setField('epsR', parseFloat($('lw_epsR').value)||1));
+    document.querySelectorAll('.wiz-typecard').forEach(card=>{
+      on(card,'click', ()=>{ st.lensType = card.dataset.lenstype; this.render(); });
+    });
+    if (this.isMeniscus()){
+      on($('lw_leftR'),'input', ()=>{ st.leftR=parseFloat($('lw_leftR').value)||1; this.render(); });
+      on($('lw_rightR'),'input', ()=>{ st.rightR=parseFloat($('lw_rightR').value)||1; this.render(); });
+      on($('lw_targetF'),'input', ()=>{ st.targetF=parseFloat($('lw_targetF').value)||1; });
+      on($('lw_solveR2'),'click', ()=> this.applyFocalTarget());
+    } else {
+      document.querySelectorAll('input[name=lw_radiusMode]').forEach(r=>{
+        on(r,'change', ()=>{ st.radiusMode=r.value; this.render(); });
+      });
+      if (st.radiusMode==='byFocal'){
+        on($('lw_targetF'),'input', ()=>{ st.targetF=parseFloat($('lw_targetF').value)||1; this.applyFocalTarget(); });
+      } else {
+        on($('lw_R'),'input', ()=>{ st.R=parseFloat($('lw_R').value)||1; this.render(); });
+      }
+    }
+    on($('lw_span'),'input', ()=>{ st.span=parseFloat($('lw_span').value)||1; this.render(); });
+    on($('lw_thick'),'input', ()=>{ st.centerThickness=parseFloat($('lw_thick').value)||0.1; this.render(); });
+    on($('lw_rot'),'input', ()=>{ st.rotationDeg=parseFloat($('lw_rot').value)||0; });
+    on($('lw_cancel'),'click', ()=> this.cancel());
+    on($('lw_place'),'click', ()=> this.place());
+  }
+};
+on($('lensModalOverlay'),'click', (e)=>{ if (e.target.id==='lensModalOverlay') LensWizard.cancel(); });
+
 function wireToolbar(toolbarIds, hintId){
   const toolbars = Array.isArray(toolbarIds) ? toolbarIds : [toolbarIds];
   toolbars.forEach(tid=>{
     document.querySelectorAll('#'+tid+' button').forEach(btn=>{
       on(btn,'click',()=>{
+        if (btn.dataset.tool==='lens'){
+          toolbars.forEach(t2=>document.querySelectorAll('#'+t2+' button').forEach(b=>b.classList.remove('active')));
+          btn.classList.add('active');
+          App.draft = null; App.selectedId = null; App.pendingLens = null;
+          renderLists();
+          LensWizard.open(toolbars, hintId);
+          return;
+        }
         toolbars.forEach(t2=>document.querySelectorAll('#'+t2+' button').forEach(b=>b.classList.remove('active')));
         btn.classList.add('active');
         App.tool = btn.dataset.tool;
@@ -1011,8 +1402,19 @@ function handleGeoClick(evt){
   const p = canvasPointToWorld(evt);
   const tool = App.tool;
   if (tool==='select'){ trySelect(p); return; }
+  if (tool==='lens'){
+    if (!App.pendingLens) return; // wizard controls entry into this state
+    const params = App.pendingLens;
+    const m = Object.assign({ id:uid(), type:'lens', label:'lens', pec:false, cx:p.x, cy:p.y }, params);
+    App.project.materials.push(m);
+    App.selectedId = m.id;
+    App.pendingLens = null;
+    resetToolbarTo(['toolbarMatSurface','toolbarMatRegion'], 'select');
+    renderLists(); drawGeoCanvas();
+    return;
+  }
 
-  const shapeArity = {line:2,triangle:3,circle:2,ellipse:2,arc:2,earc:2,parc:2,dipole:1,wire:2,loop:2};
+  const shapeArity = {line:2,triangle:3,circle:2,ellipse:2,arc:2,earc:2,parc:2,dipole:1,wire:2,loop:2,port:2,aperture:2};
   if (tool==='spline'){
     App.draft = App.draft || {type:'spline', pts:[]};
     App.draft.pts.push(p);
@@ -1046,7 +1448,7 @@ window.addEventListener('keydown',(e)=>{
 
 function finishDraft(){
   const d = App.draft; App.draft=null;
-  const sourceTypes = {dipole:1,wire:1,loop:1};
+  const sourceTypes = {dipole:1,wire:1,loop:1,port:1,aperture:1};
   let obj;
   const toolbarIds = App.tab==='sources' ? ['toolbarSrc'] : ['toolbarMatSurface','toolbarMatRegion'];
   if (sourceTypes[d.type]){
@@ -1095,7 +1497,8 @@ const MATERIAL_FIELDS = {
   earc:[['cx','Cx'],['cy','Cy'],['rx','Rx'],['ry','Ry'],['a0','Start ° '],['a1','End °'],['thickness','Thickness (mm)']],
   parc:[['vx','Vertex X'],['vy','Vertex Y'],['fx','Focus X'],['fy','Focus Y'],['height','Height (mm)'],['thickness','Thickness (mm)']],
   spline:[],
-  func:[['expr','y = f(x)'],['xmin','X min'],['xmax','X max'],['yoff','Y offset'],['thickness','Thickness (mm)']]
+  func:[['expr','y = f(x)'],['xmin','X min'],['xmax','X max'],['yoff','Y offset'],['thickness','Thickness (mm)']],
+  lens:[['cx','Cx'],['cy','Cy'],['rotationDeg','Rotation °'],['span','Span (mm)'],['centerThickness','Center thickness (mm)'],['leftR','Left R (mm)'],['rightR','Right R (mm)']]
 };
 function renderLists(){
   $('matCount').textContent = App.project.materials.length;
@@ -1117,6 +1520,23 @@ function makeNumInput(obj, key, label, redraw, step){
   wrap.appendChild(inp);
   return wrap;
 }
+function makeSelectInput(obj, key, label, options, redraw){
+  const wrap=document.createElement('div'); wrap.className='field';
+  const lab=document.createElement('label'); lab.textContent=label; wrap.appendChild(lab);
+  const sel=document.createElement('select');
+  options.forEach(o=>{ const opt=document.createElement('option'); opt.value=o; opt.textContent=o; if(obj[key]===o) opt.selected=true; sel.appendChild(opt); });
+  sel.addEventListener('click', e=>e.stopPropagation());
+  sel.addEventListener('change', ()=>{ obj[key]=sel.value; redraw(); });
+  wrap.appendChild(sel);
+  return wrap;
+}
+function refreshLensReadout(m){
+  const el = $('lensFocalReadout_'+m.id);
+  if (!el) return;
+  const n = Math.sqrt(Math.max(m.epsR,1e-6));
+  const f = thinLensFocalLength(n, m.leftType, m.leftR, m.rightType, m.rightR);
+  el.textContent = 'n = '+fmt(n,4)+'  ·  approx. focal length: '+(isFinite(f)?fmt(f,4)+' mm':'∞ (afocal)');
+}
 function materialCard(m){
   const card=document.createElement('div'); card.className='objcard'+(m.id===App.selectedId?' selected':'');
   const h=document.createElement('div'); h.className='oh';
@@ -1128,24 +1548,38 @@ function materialCard(m){
   card.onclick=()=>{ App.selectedId = App.selectedId===m.id? null : m.id; renderLists(); drawGeoCanvas(); };
   const body=document.createElement('div'); body.className='obody';
   const grid=document.createElement('div'); grid.className='row2';
-  (MATERIAL_FIELDS[m.type]||[]).forEach(([k,l])=> grid.appendChild(makeNumInput(m,k,l,()=>drawGeoCanvas())));
+  const fieldRedraw = m.type==='lens' ? (()=>{ drawGeoCanvas(); refreshLensReadout(m); }) : (()=>drawGeoCanvas());
+  (MATERIAL_FIELDS[m.type]||[]).forEach(([k,l])=> grid.appendChild(makeNumInput(m,k,l,fieldRedraw)));
   body.appendChild(grid);
   if (m.type==='spline'){
     const note=document.createElement('div'); note.className='hint'; note.textContent=`${m.points.length} control points. Re-draw with the Spline tool to replace.`;
     body.appendChild(note);
     body.appendChild(makeNumInput(m,'thickness','Thickness (mm)',()=>drawGeoCanvas()));
   }
+  if (m.type==='lens'){
+    const typeGrid=document.createElement('div'); typeGrid.className='row2'; typeGrid.style.marginTop='6px';
+    typeGrid.appendChild(makeSelectInput(m,'leftType','Left surface',['flat','convex','concave'],fieldRedraw));
+    typeGrid.appendChild(makeSelectInput(m,'rightType','Right surface',['flat','convex','concave'],fieldRedraw));
+    body.appendChild(typeGrid);
+    const fRead=document.createElement('div'); fRead.className='hint';
+    const f = thinLensFocalLength(Math.sqrt(Math.max(m.epsR,1e-6)), m.leftType, m.leftR, m.rightType, m.rightR);
+    fRead.textContent = 'n = '+fmt(Math.sqrt(Math.max(m.epsR,1e-6)),4)+'  ·  approx. focal length: '+(isFinite(f)?fmt(f,4)+' mm':'∞ (afocal)');
+    fRead.id = 'lensFocalReadout_'+m.id;
+    body.appendChild(fRead);
+  }
   const matgrid=document.createElement('div'); matgrid.className='row3'; matgrid.style.marginTop='6px';
-  matgrid.appendChild(makeNumInput(m,'epsR','εr'));
+  matgrid.appendChild(makeNumInput(m,'epsR','εr',fieldRedraw));
   matgrid.appendChild(makeNumInput(m,'muR','μr'));
   matgrid.appendChild(makeNumInput(m,'sigma','σ (S/m)'));
   body.appendChild(matgrid);
-  const pecRow=document.createElement('label'); pecRow.className='chk'; pecRow.style.marginTop='6px';
-  const pecChk=document.createElement('input'); pecChk.type='checkbox'; pecChk.checked=m.pec;
-  pecChk.onclick=e=>e.stopPropagation();
-  pecChk.onchange=()=>{ m.pec=pecChk.checked; drawGeoCanvas(); };
-  pecRow.appendChild(pecChk); pecRow.appendChild(document.createTextNode(' PEC (perfect conductor)'));
-  body.appendChild(pecRow);
+  if (m.type!=='lens'){
+    const pecRow=document.createElement('label'); pecRow.className='chk'; pecRow.style.marginTop='6px';
+    const pecChk=document.createElement('input'); pecChk.type='checkbox'; pecChk.checked=m.pec;
+    pecChk.onclick=e=>e.stopPropagation();
+    pecChk.onchange=()=>{ m.pec=pecChk.checked; drawGeoCanvas(); };
+    pecRow.appendChild(pecChk); pecRow.appendChild(document.createTextNode(' PEC (perfect conductor)'));
+    body.appendChild(pecRow);
+  }
   card.appendChild(body);
   return card;
 }
@@ -1177,11 +1611,21 @@ function sourceCard(s){
     grid.appendChild(makeNumInput(s,'radius','Radius'));
     grid.appendChild(makeNumInput(s,'nx','Normal nx'));grid.appendChild(makeNumInput(s,'ny','Normal ny'));grid.appendChild(makeNumInput(s,'nz','Normal nz'));
     grid.appendChild(makeNumInput(s,'npts','# segments'));
+  } else if (s.type==='port'){
+    grid.appendChild(makeNumInput(s,'x1','X1'));grid.appendChild(makeNumInput(s,'y1','Y1'));grid.appendChild(makeNumInput(s,'z1','Z1'));
+    grid.appendChild(makeNumInput(s,'x2','X2'));grid.appendChild(makeNumInput(s,'y2','Y2'));grid.appendChild(makeNumInput(s,'z2','Z2'));
+    grid.appendChild(makeNumInput(s,'impedance','Impedance (Ω)'));
+    grid.appendChild(makeNumInput(s,'npts','# feed points'));
+  } else if (s.type==='aperture'){
+    grid.appendChild(makeNumInput(s,'x1','X1'));grid.appendChild(makeNumInput(s,'y1','Y1'));grid.appendChild(makeNumInput(s,'z1','Z1'));
+    grid.appendChild(makeNumInput(s,'x2','X2'));grid.appendChild(makeNumInput(s,'y2','Y2'));grid.appendChild(makeNumInput(s,'z2','Z2'));
+    grid.appendChild(makeNumInput(s,'dx','Field dir. dx'));grid.appendChild(makeNumInput(s,'dy','Field dir. dy'));grid.appendChild(makeNumInput(s,'dz','Field dir. dz'));
+    grid.appendChild(makeNumInput(s,'npts','# sample points'));
   }
   grid.forEach = Array.prototype.forEach; // (no-op, keeps engines happy)
   body.appendChild(grid);
   const row2=document.createElement('div'); row2.className='row2'; row2.style.marginTop='6px';
-  row2.appendChild(makeNumInput(s,'amplitude','Amplitude (A)'));
+  row2.appendChild(makeNumInput(s,'amplitude', s.type==='port' ? 'Source voltage V₀ (V)' : 'Amplitude (A)'));
   row2.appendChild(makeNumInput(s,'phaseDeg','Phase (deg)'));
   body.appendChild(row2);
   if (s.type==='wire' || s.type==='loop'){
@@ -1193,6 +1637,27 @@ function sourceCard(s){
     sel.onchange=()=>{ s.taper=sel.value; };
     taperWrap.appendChild(sel);
     body.appendChild(taperWrap);
+  }
+  if (s.type==='port'){
+    const note=document.createElement('div'); note.className='hint';
+    note.innerHTML = 'Field source with configurable impedance: modeled as a Norton-equivalent current source I&#8320;=V&#8320;/R in parallel with a shunt resistance R at the feed point(s), so the port also loads/absorbs energy like a real terminal impedance — not a pure impressed current.';
+    body.appendChild(note);
+  }
+  if (s.type==='aperture'){
+    const distWrap=document.createElement('div'); distWrap.className='field'; distWrap.style.marginTop='6px';
+    const lab=document.createElement('label'); lab.textContent='Field distribution'; distWrap.appendChild(lab);
+    const sel=document.createElement('select');
+    ['uniform','gaussian','sinusoidal'].forEach(o=>{const opt=document.createElement('option');opt.value=o;opt.textContent=o;if(s.distribution===o)opt.selected=true;sel.appendChild(opt);});
+    sel.onclick=e=>e.stopPropagation();
+    sel.onchange=()=>{ s.distribution=sel.value; renderLists(); drawGeoCanvas(); };
+    distWrap.appendChild(sel);
+    body.appendChild(distWrap);
+    if (s.distribution==='gaussian'){
+      body.appendChild(makeNumInput(s,'gaussianSigma','Gaussian σ (fraction of span)',()=>drawGeoCanvas()));
+    }
+    const note=document.createElement('div'); note.className='hint';
+    note.textContent = 'Field source: the chosen field component is directly imposed (hard-set) across the aperture each timestep, following the selected spatial distribution — not driven via an impressed current.';
+    body.appendChild(note);
   }
   card.appendChild(body);
   return card;
@@ -1287,6 +1752,19 @@ function pointInTriangle(px,py,x1,y1,x2,y2,x3,y3){
   const hasNeg=(d1<0)||(d2<0)||(d3<0), hasPos=(d1>0)||(d2>0)||(d3>0);
   return !(hasNeg && hasPos);
 }
+function lensSurfaceU(v, u0, R, type, isLeft){
+  if (type==='flat' || !R) return u0;
+  if (R < Math.abs(v)) return null;
+  const s = Math.sqrt(R*R - v*v);
+  if (isLeft){
+    if (type==='convex') return (u0+R) - s;
+    if (type==='concave') return (u0-R) + s;
+  } else {
+    if (type==='convex') return (u0-R) + s;
+    if (type==='concave') return (u0+R) - s;
+  }
+  return u0;
+}
 const _fcache = {};
 function safeEvalFunc(expr, x){
   try{
@@ -1341,6 +1819,18 @@ function materialInsideCell(m, x, y){
       const fy = safeEvalFunc(m.expr, x) + (m.yoff||0);
       return Math.abs(y-fy) <= w;
     }
+    case 'lens': {
+      const rad = (m.rotationDeg||0)*Math.PI/180;
+      const dx = x-m.cx, dy = y-m.cy;
+      const u = dx*Math.cos(-rad) - dy*Math.sin(-rad);
+      const v = dx*Math.sin(-rad) + dy*Math.cos(-rad);
+      if (Math.abs(v) > m.span/2) return false;
+      const u0 = -m.centerThickness/2, u1 = m.centerThickness/2;
+      const leftU = lensSurfaceU(v, u0, m.leftR, m.leftType, true);
+      const rightU = lensSurfaceU(v, u1, m.rightR, m.rightType, false);
+      if (leftU===null || rightU===null) return false;
+      return u >= leftU && u <= rightU;
+    }
   }
   return false;
 }
@@ -1368,7 +1858,12 @@ function rasterizeMaterials(materials, gd){
 }
 
 function buildSourcePoints(sources, gd, planeZ){
-  // Expand dipole/wire/loop sources into elemental point injections {i,j,Jx,Jy,Jz,phaseRad,warn}
+  // Expand dipole/wire/loop/port/aperture sources into elemental point injections.
+  // 'soft' points (dipole, wire, loop, port) carry Jx/Jy/Jz and are added to the field each
+  // step (impressed current). Port points additionally carry an 'impedance' field, used once during
+  // setup to add a local shunt-conductance loading term (Norton-equivalent lumped port).
+  // 'hard' points (aperture) carry Fx/Fy/Fz target field values and directly overwrite the
+  // field component each step (impressed field, not current) — see stepFields().
   const pts = [];
   const worldToCell = (x,y)=>{
     const i = Math.round((x-rast.originX)/gd.dx) + gd.pml;
@@ -1416,6 +1911,43 @@ function buildSourcePoints(sources, gd, planeZ){
         if (s.taper==='sinusoidal') taper = Math.sin(t);
         const zWarn = Math.abs(pz-planeZ) > gd.dx*3;
         pts.push({x:px,y:py, Jx:amp*taper*tx, Jy:amp*taper*ty, Jz:amp*taper*tz, phase:ph, warn:zWarn});
+      }
+    } else if (s.type==='port'){
+      // Lumped port: Norton-equivalent of a voltage source V0 in series with impedance R —
+      // an injected current I0=V0/R plus a shunt conductance 1/R loading the local field,
+      // so (unlike a plain current source) it also absorbs/damps re-reflected energy.
+      const dxv=s.x2-s.x1, dyv=s.y2-s.y1, dzv=(s.z2||0)-(s.z1||0);
+      const len = Math.hypot(dxv,dyv,dzv)||1;
+      const ux=dxv/len, uy=dyv/len, uz=dzv/len;
+      const R = Math.max(s.impedance||50, 1e-6);
+      const I0 = amp/R;
+      const n = Math.max(1, s.npts||1);
+      for (let k=0;k<n;k++){
+        const t = n>1 ? (k+0.5)/n : 0.5;
+        const x = s.x1+dxv*t, y=s.y1+dyv*t, z=(s.z1||0)+dzv*t;
+        const zWarn = Math.abs(z-planeZ) > gd.dx*3;
+        pts.push({x,y, Jx:I0*ux, Jy:I0*uy, Jz:I0*uz, phase:ph, warn:zWarn, impedance:R});
+      }
+    } else if (s.type==='aperture'){
+      // Rectangular aperture: an impressed-FIELD source, not a current source — the target
+      // field component is hard-set directly at each sample point every step (see stepFields),
+      // following the chosen spatial distribution across the aperture's span.
+      const dxv=s.x2-s.x1, dyv=s.y2-s.y1, dzv=(s.z2||0)-(s.z1||0);
+      const fnorm = Math.hypot(s.dx,s.dy,s.dz)||1;
+      const fx=s.dx/fnorm, fy=s.dy/fnorm, fz=s.dz/fnorm;
+      const n = Math.max(2, s.npts||20);
+      for (let k=0;k<n;k++){
+        const tt = (k+0.5)/n;      // 0..1 along the aperture
+        const tc = tt-0.5;         // -0.5..0.5, centered
+        const x = s.x1+dxv*tt, y=s.y1+dyv*tt, z=(s.z1||0)+dzv*tt;
+        let taper=1;
+        if (s.distribution==='sinusoidal') taper = Math.sin(Math.PI*tt);
+        else if (s.distribution==='gaussian'){
+          const sg = Math.max(s.gaussianSigma||0.25, 0.02);
+          taper = Math.exp(-(tc*tc)/(2*sg*sg));
+        }
+        const zWarn = Math.abs(z-planeZ) > gd.dx*3;
+        pts.push({x,y, kind:'hard', Fx:amp*taper*fx, Fy:amp*taper*fy, Fz:amp*taper*fz, phase:ph, warn:zWarn});
       }
     }
   }
@@ -1482,6 +2014,21 @@ function main(project, gd){
   let warned=false;
   for (const p of srcPts){ if (p.warn && !warned){ warned=true; postMessage({type:'progress',cycle:0,maxCycles:project.solver.maxCycles,step:0,conv:null,log:'\u26a0 A source is placed far from the grid plane Z — projecting onto the plane anyway.'}); } }
 
+  // Lumped-port impedance loading: add each port's shunt conductance 1/(R*dx) to the local
+  // cell's total loss (on top of any material/PML loss already there) and recompute that
+  // cell's E-update coefficients. This is what makes a port a real terminal impedance rather
+  // than a plain impressed current — it also damps/absorbs energy reflected back into it.
+  for (const p of srcPts){
+    if (!p.impedance) continue;
+    if (p.i<=0||p.i>=Nx-1||p.j<=0||p.j>=Ny-1) continue;
+    const n = idx(p.i,p.j);
+    const sigPort = 1/(p.impedance*dx);
+    const eps = epsR[n]*EPS0;
+    const sigTot = sigma[n] + sigX[p.i] + sigY[p.j] + sigPort;
+    CaP[n] = (1-sigTot*dt/(2*eps))/(1+sigTot*dt/(2*eps));
+    CbP[n] = (dt/eps)/(1+sigTot*dt/(2*eps));
+  }
+
   const omega = 2*Math.PI*project.grid.freqGHz*1e9;
   const stepsPerCycle = gd.stepsPerCycle;
   const maxCycles = project.solver.maxCycles;
@@ -1542,16 +2089,21 @@ function main(project, gd){
         Ey[n] = CaP[n]*Ey[n] + CbP[n]*curl;
       }
     }
-    // inject sources (soft current source, CW)
-    const sv = Math.sin(omega*t);
+    // inject sources: 'soft' (impressed current: dipole/wire/loop/port) are added to the
+    // field; 'hard' (impressed field: aperture) directly overwrite it, per-component.
     for (const p of srcPts){
       if (p.i<=0||p.i>=Nx-1||p.j<=0||p.j>=Ny-1) continue;
       const n = idx(p.i,p.j);
-      const s = sv; // phase handled via omega*t + phase below
       const sPhased = Math.sin(omega*t + p.phase);
-      if (p.Jz) Ez[n] += CbP[n]*p.Jz*sPhased/(dx*dx);
-      if (p.Jx) Ex[n] += CbP[n]*p.Jx*sPhased/(dx*dx);
-      if (p.Jy) Ey[n] += CbP[n]*p.Jy*sPhased/(dx*dx);
+      if (p.kind==='hard'){
+        if (p.Fz) Ez[n] = p.Fz*sPhased;
+        if (p.Fx) Ex[n] = p.Fx*sPhased;
+        if (p.Fy) Ey[n] = p.Fy*sPhased;
+      } else {
+        if (p.Jz) Ez[n] += CbP[n]*p.Jz*sPhased/(dx*dx);
+        if (p.Jx) Ex[n] += CbP[n]*p.Jx*sPhased/(dx*dx);
+        if (p.Jy) Ey[n] += CbP[n]*p.Jy*sPhased/(dx*dx);
+      }
     }
   }
 
@@ -1710,7 +2262,84 @@ function colormapCSS(name){
   return 'linear-gradient(0deg,'+stops.map((c,i)=>`rgb(${c[0]},${c[1]},${c[2]}) ${Math.round(100*i/(stops.length-1))}%`).join(',')+')';
 }
 
-const COMPLEX_COMPONENTS = {Ex:1,Ey:1,Ez:1,Hx:1,Hy:1,Hz:1};
+const COMPLEX_COMPONENTS = {
+  Ex:1,Ey:1,Ez:1,Hx:1,Hy:1,Hz:1,
+  Erho:1,Ephi:1,Hrho:1,Hphi:1,
+  Er:1,Etheta:1,Hr:1,Htheta:1
+};
+// Maps every Field/Quantity dropdown value to which vector it comes from and which
+// component of that vector it represents. 'x'/'y'/'z' are plain Cartesian components;
+// 'rho'/'phi' are cylindrical (referenced from the world origin, x=y=0); 'r'/'theta'/'phi'
+// are spherical (also referenced from the world origin, using the grid plane's Z height
+// for the polar angle); 'mag' is the coordinate-system-invariant vector magnitude.
+const FIELD_SPECS = {
+  Ex:{vec:'E',comp:'x'}, Ey:{vec:'E',comp:'y'}, Ez:{vec:'E',comp:'z'},
+  Hx:{vec:'H',comp:'x'}, Hy:{vec:'H',comp:'y'}, Hz:{vec:'H',comp:'z'},
+  Emag:{vec:'E',comp:'mag'}, Hmag:{vec:'H',comp:'mag'},
+  Sx:{vec:'S',comp:'x'}, Sy:{vec:'S',comp:'y'}, Sz:{vec:'S',comp:'z'}, Smag:{vec:'S',comp:'mag'},
+  Erho:{vec:'E',comp:'rho'}, Ephi:{vec:'E',comp:'phi'},
+  Hrho:{vec:'H',comp:'rho'}, Hphi:{vec:'H',comp:'phi'},
+  Srho:{vec:'S',comp:'rho'}, Sphi:{vec:'S',comp:'phi'},
+  Er:{vec:'E',comp:'r'}, Etheta:{vec:'E',comp:'theta'},
+  Hr:{vec:'H',comp:'r'}, Htheta:{vec:'H',comp:'theta'},
+  Sr:{vec:'S',comp:'r'}, Stheta:{vec:'S',comp:'theta'}
+};
+// Field/Quantity dropdown option sets per coordinate system.
+const COORD_FIELD_OPTIONS = {
+  cartesian: {
+    'Electric field (complex)': [['Ex','Ex'],['Ey','Ey'],['Ez','Ez']],
+    'Magnetic field (complex)': [['Hx','Hx'],['Hy','Hy'],['Hz','Hz']],
+    'Vector magnitude (real)': [['Emag','|E|'],['Hmag','|H|']],
+    'Power flux — Poynting (real)': [['Sx','Sx'],['Sy','Sy'],['Sz','Sz'],['Smag','|S|']]
+  },
+  cylindrical: {
+    'Electric field (complex)': [['Erho','Eρ'],['Ephi','Eφ'],['Ez','Ez']],
+    'Magnetic field (complex)': [['Hrho','Hρ'],['Hphi','Hφ'],['Hz','Hz']],
+    'Vector magnitude (real)': [['Emag','|E|'],['Hmag','|H|']],
+    'Power flux — Poynting (real)': [['Srho','Sρ'],['Sphi','Sφ'],['Sz','Sz'],['Smag','|S|']]
+  },
+  spherical: {
+    'Electric field (complex)': [['Er','Er'],['Etheta','Eθ'],['Ephi','Eφ']],
+    'Magnetic field (complex)': [['Hr','Hr'],['Htheta','Hθ'],['Hphi','Hφ']],
+    'Vector magnitude (real)': [['Emag','|E|'],['Hmag','|H|']],
+    'Power flux — Poynting (real)': [['Sr','Sr'],['Stheta','Sθ'],['Sphi','Sφ'],['Smag','|S|']]
+  }
+};
+function rebuildFieldOptions(coordSys){
+  const groups = COORD_FIELD_OPTIONS[coordSys] || COORD_FIELD_OPTIONS.cartesian;
+  const prevVal = $('v_field').value;
+  let html = '';
+  for (const label in groups){
+    html += '<optgroup label="'+label+'">';
+    groups[label].forEach(([val,text])=>{ html += '<option value="'+val+'">'+text+'</option>'; });
+    html += '</optgroup>';
+  }
+  $('v_field').innerHTML = html;
+  // keep the same selection if it still exists in the new option set (e.g. Ez/Hz/|E| are
+  // shared across systems), otherwise fall back to the first electric-field component
+  const stillValid = Array.from($('v_field').options).some(o=>o.value===prevVal);
+  $('v_field').value = stillValid ? prevVal : groups['Electric field (complex)'][0][0];
+}
+// Cylindrical/spherical unit-vector basis at a world point (x,y), referenced from the
+// origin (0,0); z0 is the grid plane's height, used for the spherical polar angle.
+function coordBasis(x, y, z0){
+  const phi = Math.atan2(y, x);
+  const rxy = Math.hypot(x, y);
+  const theta = Math.atan2(rxy, z0);
+  return { cosPhi:Math.cos(phi), sinPhi:Math.sin(phi), cosTheta:Math.cos(theta), sinTheta:Math.sin(theta) };
+}
+function projectVec(vx, vy, vz, basis, comp){
+  switch(comp){
+    case 'x': return vx;
+    case 'y': return vy;
+    case 'z': return vz;
+    case 'rho': return vx*basis.cosPhi + vy*basis.sinPhi;
+    case 'phi': return -vx*basis.sinPhi + vy*basis.cosPhi;
+    case 'r': return vx*basis.sinTheta*basis.cosPhi + vy*basis.sinTheta*basis.sinPhi + vz*basis.cosTheta;
+    case 'theta': return vx*basis.cosTheta*basis.cosPhi + vy*basis.cosTheta*basis.sinPhi - vz*basis.sinTheta;
+  }
+  return 0;
+}
 function applyFunc(re, im, func){
   switch(func){
     case 're': return re;
@@ -1721,50 +2350,60 @@ function applyFunc(re, im, func){
     case 'abs': default: return Math.hypot(re,im);
   }
 }
-function computeFieldArray(res, field, func, frame){
+function computeFieldArray(res, field, func, frame, coordSys){
   const N = res.Nx*res.Ny;
   const out = new Float32Array(N);
-  const isComplexComp = !!COMPLEX_COMPONENTS[field];
+  const spec = FIELD_SPECS[field] || {vec:'E',comp:'z'};
+  const needsBasis = (spec.comp==='rho'||spec.comp==='phi'||spec.comp==='r'||spec.comp==='theta');
+  const planeZ = App.project.grid.planeZ||0;
+  const Ny = res.Ny;
   for (let n=0;n<N;n++){
     let val=0;
+    let basis=null;
+    if (needsBasis){
+      const i = Math.floor(n/Ny), j = n%Ny;
+      const x = res.originX + (i-res.pml)*res.dx;
+      const y = res.originY + (j-res.pml)*res.dx;
+      basis = coordBasis(x, y, planeZ);
+    }
     if (frame){
       const Ex=frame.Ex[n],Ey=frame.Ey[n],Ez=frame.Ez[n],Hx=frame.Hx[n],Hy=frame.Hy[n],Hz=frame.Hz[n];
-      if (isComplexComp){
-        // time-domain snapshot is a real number (Im=0) for the chosen function
-        const re = {Ex,Ey,Ez,Hx,Hy,Hz}[field];
-        val = applyFunc(re, 0, func);
+      if (spec.comp==='mag'){
+        if (spec.vec==='E') val=Math.hypot(Ex,Ey,Ez);
+        else if (spec.vec==='H') val=Math.hypot(Hx,Hy,Hz);
+        else val=Math.hypot(Ey*Hz-Ez*Hy, Ez*Hx-Ex*Hz, Ex*Hy-Ey*Hx);
       } else {
-        switch(field){
-          case 'Emag': val=Math.hypot(Ex,Ey,Ez); break;
-          case 'Hmag': val=Math.hypot(Hx,Hy,Hz); break;
-          case 'Sx': val=Ey*Hz-Ez*Hy; break;
-          case 'Sy': val=Ez*Hx-Ex*Hz; break;
-          case 'Sz': val=Ex*Hy-Ey*Hx; break;
-          case 'Smag': val=Math.hypot(Ey*Hz-Ez*Hy, Ez*Hx-Ex*Hz, Ex*Hy-Ey*Hx); break;
-          default: val=Ez;
-        }
+        let vx,vy,vz;
+        if (spec.vec==='E'){ vx=Ex;vy=Ey;vz=Ez; }
+        else if (spec.vec==='H'){ vx=Hx;vy=Hy;vz=Hz; }
+        else { vx=Ey*Hz-Ez*Hy; vy=Ez*Hx-Ex*Hz; vz=Ex*Hy-Ey*Hx; }
+        const comp = needsBasis ? projectVec(vx,vy,vz,basis,spec.comp) : projectVec(vx,vy,vz,null,spec.comp);
+        val = COMPLEX_COMPONENTS[field] ? applyFunc(comp, 0, func) : comp;
       }
     } else {
       const p = res.phasor;
       const ExR=p.ExR[n],ExI=p.ExI[n],EyR=p.EyR[n],EyI=p.EyI[n],EzR=p.EzR[n],EzI=p.EzI[n];
       const HxR=p.HxR[n],HxI=p.HxI[n],HyR=p.HyR[n],HyI=p.HyI[n],HzR=p.HzR[n],HzI=p.HzI[n];
       const mag=(r,i)=>Math.hypot(r,i);
-      if (isComplexComp){
-        const pair = {Ex:[ExR,ExI],Ey:[EyR,EyI],Ez:[EzR,EzI],Hx:[HxR,HxI],Hy:[HyR,HyI],Hz:[HzR,HzI]}[field];
-        val = applyFunc(pair[0], pair[1], func);
+      const sx = 0.5*(EyR*HzR+EyI*HzI - (EzR*HyR+EzI*HyI));
+      const sy = 0.5*(EzR*HxR+EzI*HxI - (ExR*HzR+ExI*HzI));
+      const sz = 0.5*(ExR*HyR+ExI*HyI - (EyR*HxR+EyI*HxI));
+      if (spec.comp==='mag'){
+        if (spec.vec==='E') val=Math.hypot(mag(ExR,ExI),mag(EyR,EyI),mag(EzR,EzI));
+        else if (spec.vec==='H') val=Math.hypot(mag(HxR,HxI),mag(HyR,HyI),mag(HzR,HzI));
+        else val=Math.hypot(sx,sy,sz);
+      } else if (spec.vec==='S'){
+        // S is already real-valued (a time-averaged Poynting vector) — just rotate it.
+        val = needsBasis ? projectVec(sx,sy,sz,basis,spec.comp) : projectVec(sx,sy,sz,null,spec.comp);
       } else {
-        const sx = 0.5*(EyR*HzR+EyI*HzI - (EzR*HyR+EzI*HyI));
-        const sy = 0.5*(EzR*HxR+EzI*HxI - (ExR*HzR+ExI*HzI));
-        const sz = 0.5*(ExR*HyR+ExI*HyI - (EyR*HxR+EyI*HxI));
-        switch(field){
-          case 'Emag': val=Math.hypot(mag(ExR,ExI),mag(EyR,EyI),mag(EzR,EzI)); break;
-          case 'Hmag': val=Math.hypot(mag(HxR,HxI),mag(HyR,HyI),mag(HzR,HzI)); break;
-          case 'Sx': val=sx; break;
-          case 'Sy': val=sy; break;
-          case 'Sz': val=sz; break;
-          case 'Smag': val=Math.hypot(sx,sy,sz); break;
-          default: val=mag(EzR,EzI);
-        }
+        // E or H: rotate the real and imaginary parts separately (rotation coefficients
+        // are real, so this is exactly equivalent to rotating the complex phasor itself),
+        // then apply the selected function (Re/Im/Arg/Abs/Abs²) to the rotated phasor.
+        const [vxR,vyR,vzR] = spec.vec==='E' ? [ExR,EyR,EzR] : [HxR,HyR,HzR];
+        const [vxI,vyI,vzI] = spec.vec==='E' ? [ExI,EyI,EzI] : [HxI,HyI,HzI];
+        const re = needsBasis ? projectVec(vxR,vyR,vzR,basis,spec.comp) : projectVec(vxR,vyR,vzR,null,spec.comp);
+        const im = needsBasis ? projectVec(vxI,vyI,vzI,basis,spec.comp) : projectVec(vxI,vyI,vzI,null,spec.comp);
+        val = applyFunc(re, im, func);
       }
     }
     out[n]=val;
@@ -1785,8 +2424,9 @@ function drawVizCanvas(){
   const field = $('v_field').value;
   const func = $('v_func').disabled ? 'abs' : $('v_func').value;
   const source = $('v_source').value;
+  const coordSys = $('v_coord').value;
   const frame = (source==='frame' && res.frames.length) ? res.frames[clamp(parseInt($('playSlider').value)||0,0,res.frames.length-1)] : null;
-  const arr = computeFieldArray(res, field, func, frame);
+  const arr = computeFieldArray(res, field, func, frame, coordSys);
 
   let mn, mx;
   const scaleType = $('v_scale').value;
@@ -1905,6 +2545,10 @@ function materialOutlinePoints(m){
       const pts=[]; for(let i=0;i<=steps;i++){ const x=m.xmin+(m.xmax-m.xmin)*i/steps; const y=safeEvalFunc(m.expr,x)+(m.yoff||0); pts.push({x,y}); }
       return {closed:false, pts};
     }
+    case 'lens': {
+      const local = lensLocalOutline(m, 40);
+      return {closed:true, pts: local.map(p=>lensWorldPoint(m,p.u,p.v))};
+    }
   }
   return {closed:false, pts:[]};
 }
@@ -1978,17 +2622,18 @@ function drawPolarOverlay(ctx, ff, cx, cy, R, procMode){
   ctx.restore();
 }
 
-['v_field','v_func','v_source','v_cmap','v_scale','v_min','v_max','v_auto','v_overlay','v_geo','v_ffproc'].forEach(id=>{
+['v_field','v_func','v_source','v_cmap','v_scale','v_min','v_max','v_auto','v_overlay','v_geo','v_ffproc','v_coord'].forEach(id=>{
   const el = $(id);
   on(el, el.type==='checkbox'||el.tagName==='SELECT' ? 'change':'input', drawVizCanvas);
 });
 on($('v_auto'),'change', ()=>{ $('v_min').disabled=$('v_auto').checked; $('v_max').disabled=$('v_auto').checked; drawVizCanvas(); });
 on($('v_field'),'change', updateFuncSelectorState);
+on($('v_coord'),'change', ()=>{ rebuildFieldOptions($('v_coord').value); updateFuncSelectorState(); drawVizCanvas(); });
 function updateFuncSelectorState(){
   const field = $('v_field').value;
   const applicable = !!COMPLEX_COMPONENTS[field];
   $('v_func').disabled = !applicable;
-  $('v_func').title = applicable ? '' : 'Only applies to a single complex field component (Ex..Hz) — this quantity is already real-valued.';
+  $('v_func').title = applicable ? '' : 'Only applies to a single complex field component — this quantity is already real-valued.';
 }
 updateFuncSelectorState();
 
