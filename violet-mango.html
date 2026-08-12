@@ -196,6 +196,10 @@ label.chk{display:flex; align-items:center; gap:6px; font-size:12px; color:var(-
 }
 .wiz-warn{ color:var(--mango); font-size:11px; margin-top:6px; }
 .modal-footer{ display:flex; justify-content:flex-end; gap:10px; margin-top:6px; }
+.modal-box.wide{ width:760px; }
+.cad-layer-row{ display:grid; grid-template-columns:1fr 110px 90px 80px 80px 80px 60px; gap:8px; align-items:center; padding:8px 0; border-bottom:1px solid var(--line); font-size:12px; }
+.cad-layer-row input[type=number]{ width:100%; background:var(--bg); border:1px solid var(--line); color:var(--text); padding:5px 6px; border-radius:5px; font-family:var(--mono); font-size:11.5px; }
+.cad-layer-row select{ width:100%; background:var(--bg); border:1px solid var(--line); color:var(--text); padding:5px 6px; border-radius:5px; font-size:11.5px; }
 
 </style>
 </head>
@@ -234,6 +238,11 @@ label.chk{display:flex; align-items:center; gap:6px; font-size:12px; color:var(-
           <div class="field"><label>Origin shift X (mm)</label><input type="number" id="p_cx" step="1" value="0"></div>
           <div class="field"><label>Origin shift Y (mm)</label><input type="number" id="p_cy" step="1" value="0"></div>
         </div>
+
+        <h3 class="section">Import</h3>
+        <button class="btn" id="importCadBtn" style="width:100%; border-color:var(--violet); color:var(--violet);">📐 Import CAD…</button>
+        <input type="file" id="cadFileInput" accept=".svg,.dxf,.gbr,.ger,.gtl,.gbl,.gts,.gbs,.gto,.gbo,.gml,.gbr2,.txt" multiple style="display:none;">
+        <div class="hint">Import SVG, DXF, or Gerber files as material geometry. You'll map each layer to a material after loading.</div>
 
         <h3 class="section">Surface Primitives <span style="color:var(--dim); font-weight:400;">(open curves, w/ thickness)</span></h3>
         <div class="toolbar" id="toolbarMatSurface">
@@ -535,7 +544,7 @@ Ms = -n&#770; &times; E       <span class="c">(equivalent magnetic surface curre
         <p>Material regions are rasterized onto the grid from geometric primitives, split into two families:</p>
         <table>
           <tr><th>Surface primitives (open curves, w/ thickness)</th><th>Closed-region primitives (filled area)</th></tr>
-          <tr><td>Line, Circular Arc, Elliptical Arc, Parabolic Arc, Spline, ƒ(x)</td><td>Triangle, Circle, Ellipse, Dielectric Lens</td></tr>
+          <tr><td>Line, Circular Arc, Elliptical Arc, Parabolic Arc, Spline, ƒ(x)</td><td>Triangle, Circle, Ellipse, Dielectric Lens, Polygon (import only)</td></tr>
         </table>
         <p>Each material carries relative permittivity &epsilon;r, relative permeability &mu;r, conductivity &sigma;, and an optional PEC flag (which overrides &epsilon;r/&mu;r/&sigma; with a perfect-conductor boundary condition). The elliptical arc uses the ellipse's native parametric angle convention; the parabolic arc is defined by vertex, focus, and aperture height, matching standard reflector-antenna convention.</p>
 
@@ -543,6 +552,11 @@ Ms = -n&#770; &times; E       <span class="c">(equivalent magnetic surface curre
         <p>Placed via a guided wizard (button in the Closed Region toolbar) rather than click-drawn directly. A lens is defined by two independent surfaces — each flat, convex, or concave, with its own radius of curvature — plus an aperture span, center thickness, and rotation. The wizard offers six canonical types (Biconvex, Biconcave, Plano-Convex, Plano-Concave, Meniscus Converging/Diverging) and can derive the required radius (or radii) from a target focal length using the thin-lens form of the Lensmaker's equation:</p>
         <div class="doc-eq">1/f = (n - 1) &middot; (1/R1 - 1/R2)</div>
         <p>After placement, every parameter — including the surface types and radii — remains editable in the Materials panel, with a live focal-length readout, just like any other region.</p>
+
+        <h4>CAD Import (SVG, DXF, Gerber)</h4>
+        <p>The "Import CAD…" button (Materials tab) reads SVG, DXF, or Gerber (RS-274X) files directly — no external libraries, parsed from each format's own specification. After loading, a wizard lists every distinct layer found (DXF: group code 8; SVG: nearest containing &lt;g&gt; element; Gerber: one layer per file, since Gerber's convention is one file per copper/silkscreen/etc. layer) and lets you assign each one &epsilon;r/&mu;r/&sigma;, a PEC flag, or skip it — plus a single editable import scale (auto-suggested from the file's own units where available: DXF's <code>$INSUNITS</code>, SVG's viewBox/width, Gerber's <code>%MO%</code>) and a Y-flip option (on by default for SVG, whose coordinate system is Y-down, unlike this app's Y-up world).</p>
+        <p>Supported entities: lines, circles, arcs, ellipses/elliptical arcs, closed and open polylines (including DXF's bulge-arc segments), SVG paths (cubic/quadratic beziers and elliptical arcs, flattened to polylines), and Gerber draws/flashes/regions with circular and rectangular apertures. Closed shapes import as a general filled <b>Polygon</b> material (arbitrary vertex count, ray-casting rasterization) unless they match a more specific primitive (circle, ellipse).</p>
+        <p><b>v1 limitations:</b> DXF SPLINE entities without explicit fit points are approximated as straight-segment polylines rather than fully evaluated as NURBS; DXF HATCH supports simple polyline-boundary fills only; Gerber polygon/macro apertures are approximated as circles; and Gerber clear-polarity (subtractive) regions are imported as ordinary filled regions rather than true boolean cutouts. Review layers using these features before relying on the imported geometry.</p>
 
         <h3>7. Sources</h3>
         <p>Sources are defined in full 3D and projected onto the grid plane (a warning is shown if a source sits far from the plane's Z height). Five types are supported: point dipoles (with a 3D orientation vector), wire segments, loops, lumped ports, and rectangular apertures — wire/loop support a spatial current taper (uniform or sinusoidal) along their length.</p>
@@ -619,6 +633,11 @@ DEALINGS IN THE SOFTWARE.</div>
   <div class="modal-overlay" id="lensModalOverlay">
     <div class="modal-box" id="lensModalBox"></div>
   </div>
+
+  <!-- CAD Import wizard modal -->
+  <div class="modal-overlay" id="cadModalOverlay">
+    <div class="modal-box wide" id="cadModalBox"></div>
+  </div>
 </div>
 
 <script>
@@ -643,7 +662,7 @@ const Z0 = 376.730313668;
 
 // Single source of truth for the app version — read by the header badge,
 // the Legal tab, and stamped into every exported results/project JSON file.
-const APP_VERSION = '1.5.0';
+const APP_VERSION = '1.6.0';
 
 /* ---------------------------- 1. STATE ---------------------------- */
 const App = {
@@ -893,6 +912,17 @@ function materialInsideCell(m, x, y){
       if (leftU===null || rightU===null) return false;
       return u >= leftU && u <= rightU;
     }
+    case 'polygon': {
+      // ray-casting point-in-polygon test (handles concave polygons correctly)
+      const pts = m.points;
+      let inside = false;
+      for (let pi=0, pj=pts.length-1; pi<pts.length; pj=pi++){
+        const xi=pts[pi].x, yi=pts[pi].y, xj=pts[pj].x, yj=pts[pj].y;
+        const intersect = ((yi>y)!==(yj>y)) && (x < (xj-xi)*(y-yi)/(yj-yi)+xi);
+        if (intersect) inside = !inside;
+      }
+      return inside;
+    }
   }
   return false;
 }
@@ -1099,6 +1129,11 @@ function drawMaterial(ctx, m, sel){
     ctx.save(); ctx.setLineDash([3,3]); ctx.globalAlpha=0.45;
     ctx.beginPath(); ctx.moveTo(ax0,ay0); ctx.lineTo(ax1,ay1); ctx.stroke();
     ctx.restore();
+  } else if (m.type==='polygon'){
+    ctx.beginPath();
+    m.points.forEach((p,pi)=>{ const [x,y]=w2s(p.x,p.y); pi===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
   }
 }
 function drawSource(ctx, s, sel){
@@ -1368,6 +1403,731 @@ const LensWizard = {
 };
 on($('lensModalOverlay'),'click', (e)=>{ if (e.target.id==='lensModalOverlay') LensWizard.cancel(); });
 
+/* =========================================================================
+   CAD IMPORT — SVG / DXF / Gerber geometry parsing + layer-to-material wizard
+   All parsers return RAW entities in file-native units (no scaling applied),
+   plus a suggested scaleToMM hint; the wizard applies one unified scale (and
+   optional Y-flip) to every entity uniformly at import time, so there's a
+   single place unit conversion happens rather than scattered through parsers.
+   ========================================================================= */
+
+// ---- geometry helpers (bezier flattening, SVG arc endpoint->center, DXF bulge arcs) ----
+function sampleCubicBezier(p0,p1,p2,p3,steps){
+  const pts=[];
+  for (let i=1;i<=steps;i++){
+    const t=i/steps, mt=1-t;
+    const a=mt*mt*mt, b=3*mt*mt*t, c=3*mt*t*t, d=t*t*t;
+    pts.push({x:a*p0.x+b*p1.x+c*p2.x+d*p3.x, y:a*p0.y+b*p1.y+c*p2.y+d*p3.y});
+  }
+  return pts;
+}
+function sampleQuadBezier(p0,p1,p2,steps){
+  const pts=[];
+  for (let i=1;i<=steps;i++){
+    const t=i/steps, mt=1-t;
+    const a=mt*mt, b=2*mt*t, c=t*t;
+    pts.push({x:a*p0.x+b*p1.x+c*p2.x, y:a*p0.y+b*p1.y+c*p2.y});
+  }
+  return pts;
+}
+function svgArcToCenter(x1,y1,x2,y2,rx,ry,phiDeg,largeArc,sweep){
+  const phi = phiDeg*Math.PI/180;
+  rx = Math.abs(rx); ry = Math.abs(ry);
+  if (rx<1e-9 || ry<1e-9) return null;
+  const cosPhi=Math.cos(phi), sinPhi=Math.sin(phi);
+  const dx2=(x1-x2)/2, dy2=(y1-y2)/2;
+  const x1p = cosPhi*dx2 + sinPhi*dy2;
+  const y1p = -sinPhi*dx2 + cosPhi*dy2;
+  let rxSq=rx*rx, rySq=ry*ry, x1pSq=x1p*x1p, y1pSq=y1p*y1p;
+  const lam = x1pSq/rxSq + y1pSq/rySq;
+  if (lam>1){ const s=Math.sqrt(lam); rx*=s; ry*=s; rxSq=rx*rx; rySq=ry*ry; }
+  let num = rxSq*rySq - rxSq*y1pSq - rySq*x1pSq;
+  num = Math.max(num,0);
+  let co = Math.sqrt(num/(rxSq*y1pSq+rySq*x1pSq));
+  if (largeArc===sweep) co = -co;
+  const cxp = co*(rx*y1p/ry);
+  const cyp = co*(-ry*x1p/rx);
+  const cx = cosPhi*cxp - sinPhi*cyp + (x1+x2)/2;
+  const cy = sinPhi*cxp + cosPhi*cyp + (y1+y2)/2;
+  function angleBetween(ux,uy,vx,vy){
+    const dot=ux*vx+uy*vy, len=Math.hypot(ux,uy)*Math.hypot(vx,vy);
+    let a = Math.acos(Math.max(-1,Math.min(1,dot/len)));
+    if (ux*vy-uy*vx<0) a=-a;
+    return a;
+  }
+  const theta1 = angleBetween(1,0,(x1p-cxp)/rx,(y1p-cyp)/ry);
+  let dTheta = angleBetween((x1p-cxp)/rx,(y1p-cyp)/ry,(-x1p-cxp)/rx,(-y1p-cyp)/ry);
+  if (!sweep && dTheta>0) dTheta -= 2*Math.PI;
+  if (sweep && dTheta<0) dTheta += 2*Math.PI;
+  return {cx,cy,rx,ry,phi,theta1,dTheta};
+}
+function sampleSvgArc(x1,y1,x2,y2,rx,ry,phiDeg,largeArc,sweep,steps){
+  const c = svgArcToCenter(x1,y1,x2,y2,rx,ry,phiDeg,largeArc,sweep);
+  if (!c) return [{x:x2,y:y2}];
+  const pts=[];
+  for (let i=1;i<=steps;i++){
+    const t = c.theta1 + c.dTheta*i/steps;
+    const ex = c.rx*Math.cos(t), ey = c.ry*Math.sin(t);
+    const x = Math.cos(c.phi)*ex - Math.sin(c.phi)*ey + c.cx;
+    const y = Math.sin(c.phi)*ex + Math.cos(c.phi)*ey + c.cy;
+    pts.push({x,y});
+  }
+  return pts;
+}
+function parseSvgPathD(d, curveSteps){
+  curveSteps = curveSteps || 16;
+  const tokens = d.match(/[MmLlHhVvCcSsQqTtAaZz]|[-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?/g) || [];
+  let i=0;
+  function nextNum(){ return parseFloat(tokens[i++]); }
+  const subpaths = [];
+  let cur=null, cx=0, cy=0, startX=0, startY=0, lastCmd='', lastCtrl=null;
+  function moveTo(x,y){ if (cur && cur.pts.length>1) subpaths.push(cur); cur={closed:false, pts:[{x,y}]}; cx=x;cy=y;startX=x;startY=y; }
+  function lineTo(x,y){ cur.pts.push({x,y}); cx=x; cy=y; }
+  while (i<tokens.length){
+    let cmd = tokens[i];
+    if (/^[A-Za-z]$/.test(cmd)) i++; else cmd = lastCmd;
+    const rel = cmd===cmd.toLowerCase();
+    const C = cmd.toUpperCase();
+    if (C==='M'){
+      let x=nextNum(), y=nextNum();
+      if (rel){ x+=cx; y+=cy; }
+      moveTo(x,y);
+      lastCmd='L';
+    } else if (C==='L'){
+      let x=nextNum(), y=nextNum();
+      if (rel){ x+=cx; y+=cy; }
+      lineTo(x,y);
+      lastCmd='L';
+    } else if (C==='H'){
+      let x=nextNum();
+      if (rel) x+=cx;
+      lineTo(x,cy);
+      lastCmd='H';
+    } else if (C==='V'){
+      let y=nextNum();
+      if (rel) y+=cy;
+      lineTo(cx,y);
+      lastCmd='V';
+    } else if (C==='C'){
+      let x1=nextNum(),y1=nextNum(),x2=nextNum(),y2=nextNum(),x=nextNum(),y=nextNum();
+      if (rel){ x1+=cx;y1+=cy;x2+=cx;y2+=cy;x+=cx;y+=cy; }
+      const pts=sampleCubicBezier({x:cx,y:cy},{x:x1,y:y1},{x:x2,y:y2},{x,y},curveSteps);
+      for (const p of pts) cur.pts.push(p);
+      lastCtrl={x:x2,y:y2}; cx=x; cy=y; lastCmd='C';
+    } else if (C==='S'){
+      let x2=nextNum(),y2=nextNum(),x=nextNum(),y=nextNum();
+      if (rel){ x2+=cx;y2+=cy;x+=cx;y+=cy; }
+      const refl = (lastCmd==='C'||lastCmd==='S') && lastCtrl ? {x:2*cx-lastCtrl.x,y:2*cy-lastCtrl.y} : {x:cx,y:cy};
+      const pts=sampleCubicBezier({x:cx,y:cy},refl,{x:x2,y:y2},{x,y},curveSteps);
+      for (const p of pts) cur.pts.push(p);
+      lastCtrl={x:x2,y:y2}; cx=x; cy=y; lastCmd='S';
+    } else if (C==='Q'){
+      let x1=nextNum(),y1=nextNum(),x=nextNum(),y=nextNum();
+      if (rel){ x1+=cx;y1+=cy;x+=cx;y+=cy; }
+      const pts=sampleQuadBezier({x:cx,y:cy},{x:x1,y:y1},{x,y},curveSteps);
+      for (const p of pts) cur.pts.push(p);
+      lastCtrl={x:x1,y:y1}; cx=x; cy=y; lastCmd='Q';
+    } else if (C==='T'){
+      let x=nextNum(),y=nextNum();
+      if (rel){ x+=cx;y+=cy; }
+      const refl = (lastCmd==='Q'||lastCmd==='T') && lastCtrl ? {x:2*cx-lastCtrl.x,y:2*cy-lastCtrl.y} : {x:cx,y:cy};
+      const pts=sampleQuadBezier({x:cx,y:cy},refl,{x,y},curveSteps);
+      for (const p of pts) cur.pts.push(p);
+      lastCtrl=refl; cx=x; cy=y; lastCmd='T';
+    } else if (C==='A'){
+      let rx=nextNum(),ry=nextNum(),rot=nextNum(),laf=nextNum(),sf=nextNum(),x=nextNum(),y=nextNum();
+      if (rel){ x+=cx; y+=cy; }
+      const pts=sampleSvgArc(cx,cy,x,y,rx,ry,rot,laf!==0,sf!==0,curveSteps);
+      for (const p of pts) cur.pts.push(p);
+      cx=x; cy=y; lastCmd='A';
+    } else if (C==='Z'){
+      if (cur){ cur.closed=true; cur.pts.push({x:startX,y:startY}); }
+      cx=startX; cy=startY; lastCmd='Z';
+    } else {
+      break;
+    }
+  }
+  if (cur && cur.pts.length>1) subpaths.push(cur);
+  return subpaths;
+}
+function bulgeToArcPoints(p1, p2, bulge, steps){
+  if (Math.abs(bulge) < 1e-9) return [p2];
+  const theta = 4*Math.atan(bulge);
+  const d = Math.hypot(p2.x-p1.x, p2.y-p1.y);
+  if (d < 1e-12) return [p2];
+  const r = d / (2*Math.abs(Math.sin(theta/2)));
+  const largeArc = Math.abs(theta) > Math.PI;
+  const sweep = theta > 0;
+  return sampleSvgArc(p1.x,p1.y,p2.x,p2.y, r,r, 0, largeArc, sweep, steps);
+}
+
+// ---- minimal XML tokenizer for SVG structure (tags/attrs/nesting), no DOMParser dependency ----
+function parseXML(text){
+  let i = 0;
+  const n = text.length;
+  function skipWhitespace(){ while (i<n && /\s/.test(text[i])) i++; }
+  function skipProlog(){
+    while (i<n){
+      skipWhitespace();
+      if (text.startsWith('<?', i)){ const e=text.indexOf('?>', i); i = e<0? n : e+2; }
+      else if (text.startsWith('<!--', i)){ const e=text.indexOf('-->', i); i = e<0? n : e+3; }
+      else if (text.startsWith('<!', i)){ const e=text.indexOf('>', i); i = e<0? n : e+1; }
+      else break;
+    }
+  }
+  function parseAttrs(){
+    const attrs = {};
+    while (true){
+      skipWhitespace();
+      if (i>=n || text[i]==='>' || text[i]==='/') break;
+      const m = /^[A-Za-z_:][\w:.\-]*/.exec(text.slice(i));
+      if (!m) break;
+      const name = m[0];
+      i += name.length;
+      skipWhitespace();
+      let value = '';
+      if (text[i]==='='){
+        i++;
+        skipWhitespace();
+        const quote = text[i];
+        if (quote==='"' || quote==="'"){
+          i++;
+          const end = text.indexOf(quote, i);
+          value = text.slice(i, end<0?n:end);
+          i = end<0? n : end+1;
+        }
+      }
+      attrs[name] = value;
+    }
+    return attrs;
+  }
+  function parseElement(){
+    if (text[i]!=='<') return null;
+    i++;
+    const m = /^[A-Za-z_:][\w:.\-]*/.exec(text.slice(i));
+    if (!m) return null;
+    let tag = m[0];
+    if (tag.indexOf(':')>=0) tag = tag.split(':').pop();
+    i += m[0].length;
+    const attrs = parseAttrs();
+    const node = {tag, attrs, children:[]};
+    skipWhitespace();
+    if (text[i]==='/' && text[i+1]==='>'){ i+=2; return node; }
+    if (text[i]==='>'){
+      i++;
+      while (true){
+        skipWhitespace();
+        if (text.startsWith('<!--', i)){ const e=text.indexOf('-->', i); i = e<0?n:e+3; continue; }
+        if (text.startsWith('</', i)){
+          const e = text.indexOf('>', i);
+          i = e<0? n : e+1;
+          break;
+        }
+        if (i>=n) break;
+        if (text[i]==='<'){
+          const child = parseElement();
+          if (child) node.children.push(child);
+          else i++;
+        } else {
+          const next = text.indexOf('<', i);
+          i = next<0? n : next;
+        }
+      }
+    }
+    return node;
+  }
+  skipProlog();
+  skipWhitespace();
+  return parseElement();
+}
+function findAllXML(node, tagSet, results, groupChain){
+  results = results || [];
+  groupChain = groupChain || [];
+  if (!node) return results;
+  const isGroupish = node.tag==='g' || node.tag==='svg' || node.tag==='layer';
+  const chain = isGroupish ? groupChain.concat([node]) : groupChain;
+  if (tagSet.has(node.tag)) results.push({node, groupChain});
+  for (const c of node.children) findAllXML(c, tagSet, results, chain);
+  return results;
+}
+
+// ---- SVG parser ----
+function parseSVG(text){
+  const root = parseXML(text);
+  if (!root) return { entities: [], scaleToMM: 1 };
+  let scaleToMM = 1;
+  const wAttr = root.attrs.width, vb = root.attrs.viewBox;
+  function parseLen(s){
+    const m = /^([\d.]+)\s*(mm|cm|in|px|pt)?$/.exec((s||'').trim());
+    if (!m) return null;
+    const v = parseFloat(m[1]), unit = m[2]||'px';
+    const toMM = {mm:1, cm:10, in:25.4, pt:25.4/72, px:25.4/96};
+    return v*toMM[unit];
+  }
+  if (wAttr && vb){
+    const widthMM = parseLen(wAttr);
+    const vbParts = vb.trim().split(/[\s,]+/).map(Number);
+    const vbWidth = vbParts[2];
+    if (widthMM && vbWidth) scaleToMM = widthMM/vbWidth;
+  } else if (wAttr){
+    const widthMM = parseLen(wAttr);
+    if (widthMM) scaleToMM = widthMM / (parseFloat(wAttr)||1);
+  }
+  const shapeTags = new Set(['rect','circle','ellipse','line','path','polyline','polygon']);
+  const found = findAllXML(root, shapeTags);
+  const out = [];
+  function layerNameFor(groupChain){
+    const names = groupChain.filter(g=>g.tag==='g').map(g=>g.attrs.id || g.attrs['inkscape:label']).filter(Boolean);
+    return names.length ? names[names.length-1] : 'SVG';
+  }
+  function isFilled(attrs){ return attrs.fill !== 'none'; }
+  function strokeWidthRaw(attrs){ const v = attrs['stroke-width']?parseFloat(attrs['stroke-width']):1; return isNaN(v)?1:v; }
+  function parsePoints(str){
+    const nums = (str||'').trim().split(/[\s,]+/).map(Number);
+    const pts = [];
+    for (let i=0;i+1<nums.length;i+=2) pts.push({x:nums[i], y:nums[i+1]});
+    return pts;
+  }
+  for (const {node, groupChain} of found){
+    const a = node.attrs;
+    const layer = layerNameFor(groupChain);
+    const filled = isFilled(a);
+    const thickness = strokeWidthRaw(a);
+    if (node.tag==='circle'){
+      out.push({layer, kind:'circle', cx:+a.cx||0, cy:+a.cy||0, r:+a.r||1});
+    } else if (node.tag==='ellipse'){
+      out.push({layer, kind:'ellipse', cx:+a.cx||0, cy:+a.cy||0, rx:+a.rx||1, ry:+a.ry||1});
+    } else if (node.tag==='rect'){
+      const x=+a.x||0, y=+a.y||0, w=+a.width||0, h=+a.height||0;
+      out.push({layer, kind:'polyline', closed:true, pts:[{x,y},{x:x+w,y},{x:x+w,y:y+h},{x,y:y+h}]});
+    } else if (node.tag==='line'){
+      out.push({layer, kind:'polyline', closed:false, thickness, pts:[{x:+a.x1||0,y:+a.y1||0},{x:+a.x2||0,y:+a.y2||0}]});
+    } else if (node.tag==='polyline' || node.tag==='polygon'){
+      const pts = parsePoints(a.points);
+      const closed = node.tag==='polygon' || filled;
+      out.push({layer, kind:'polyline', closed, thickness, pts});
+    } else if (node.tag==='path'){
+      const subpaths = parseSvgPathD(a.d||'', 16);
+      for (const sp of subpaths){
+        out.push({layer, kind:'polyline', closed: sp.closed || filled, thickness, pts: sp.pts});
+      }
+    }
+  }
+  return { entities: out, scaleToMM };
+}
+
+// ---- DXF parser ----
+function parseDXF(text){
+  const lines = text.split(/\r\n|\r|\n/);
+  const pairs = [];
+  for (let i=0; i+1<lines.length; i+=2){
+    const code = parseInt(lines[i].trim(), 10);
+    const val = lines[i+1].trim();
+    pairs.push([code, val]);
+  }
+  const entities = [];
+  const unitScaleToMM = {0:1, 1:25.4, 2:304.8, 3:1609344, 4:1, 5:10, 6:1000, 8:0.0254, 9:0.0000254, 10:914.4};
+  let insUnitsScale = 1;
+  function findEntitiesSection(){
+    for (let k=0;k<pairs.length-1;k++){ if (pairs[k][0]===2 && pairs[k][1]==='ENTITIES') return k; }
+    return -1;
+  }
+  for (let k=0;k<pairs.length-3;k++){
+    if (pairs[k][0]===9 && pairs[k][1]==='$INSUNITS'){
+      if (pairs[k+1][0]===70){
+        const u = parseInt(pairs[k+1][1],10);
+        if (unitScaleToMM[u]!==undefined) insUnitsScale = unitScaleToMM[u];
+      }
+      break;
+    }
+  }
+  let start = findEntitiesSection();
+  if (start<0) start = 0;
+  function readEntityRobust(idx){
+    const type = pairs[idx][1];
+    const rec = {type, layer:'0', codes:{}, points:[], bulges:[]};
+    let j = idx+1;
+    let pendingX = {};
+    while (j<pairs.length && pairs[j][0]!==0){
+      const code = pairs[j][0], val = pairs[j][1];
+      if (code===8) rec.layer = val;
+      else if (code===10 || code===11){ pendingX[code] = parseFloat(val); }
+      else if (code===20 || code===21){
+        const xCode = code-10;
+        const x = pendingX[xCode]!==undefined ? pendingX[xCode] : 0;
+        rec.points.push({x, y:parseFloat(val), group:xCode});
+      } else if (code===42){
+        if (rec.points.length) rec.bulges[rec.points.length-1] = parseFloat(val);
+      } else {
+        if (rec.codes[code]===undefined) rec.codes[code]=[];
+        rec.codes[code].push(val);
+      }
+      j++;
+    }
+    return {rec, next:j};
+  }
+  for (let k=start; k<pairs.length; k++){
+    if (pairs[k][0]===0 && pairs[k][1]==='ENDSEC') break;
+    if (pairs[k][0]===0 && ['LINE','CIRCLE','ARC','ELLIPSE','LWPOLYLINE','POLYLINE','VERTEX','SEQEND','SPLINE','HATCH'].indexOf(pairs[k][1])>=0){
+      const r = readEntityRobust(k);
+      entities.push(r.rec);
+      k = r.next-1;
+    }
+  }
+  const out = [];
+  function num(codes, code, def){ return codes[code] ? parseFloat(codes[code][0]) : def; }
+  const stitched = [];
+  for (let k=0;k<entities.length;k++){
+    const e = entities[k];
+    if (e.type==='POLYLINE'){
+      const verts = [];
+      let m = k+1;
+      while (m<entities.length && entities[m].type==='VERTEX'){
+        const v = entities[m];
+        verts.push({x:v.points[0]?v.points[0].x:0, y:v.points[0]?v.points[0].y:0});
+        m++;
+      }
+      const closed = (num(e.codes,70,0) & 1) === 1;
+      stitched.push({type:'LWPOLYLINE_STITCHED', layer:e.layer, points:verts, closed, bulges:[]});
+      k = (m<entities.length && entities[m].type==='SEQEND') ? m : m-1;
+    } else if (e.type!=='VERTEX' && e.type!=='SEQEND'){
+      stitched.push(e);
+    }
+  }
+  for (const e of stitched){
+    const layer = e.layer || '0';
+    if (e.type==='LINE'){
+      const p1=e.points[0], p2=e.points[1];
+      out.push({layer, kind:'polyline', closed:false, pts:[p1,p2]});
+    } else if (e.type==='CIRCLE'){
+      const c=e.points[0];
+      out.push({layer, kind:'circle', cx:c.x, cy:c.y, r:num(e.codes,40,1)});
+    } else if (e.type==='ARC'){
+      const c=e.points[0];
+      out.push({layer, kind:'arc', cx:c.x, cy:c.y, r:num(e.codes,40,1), a0:num(e.codes,50,0), a1:num(e.codes,51,360)});
+    } else if (e.type==='ELLIPSE'){
+      const c=e.points[0], end=e.points[1];
+      const majR = Math.hypot(end.x,end.y);
+      const rot = Math.atan2(end.y,end.x)*180/Math.PI;
+      const ratio = num(e.codes,40,1);
+      const p0 = num(e.codes,41,0)*180/Math.PI, p1 = num(e.codes,42,2*Math.PI)*180/Math.PI;
+      const isFull = Math.abs(p1-p0-360)<1e-6 || (p0===0 && p1>=359.999);
+      if (isFull){
+        out.push({layer, kind:'ellipse', cx:c.x, cy:c.y, rx:majR, ry:majR*ratio, rot});
+      } else {
+        out.push({layer, kind:'earc', cx:c.x, cy:c.y, rx:majR, ry:majR*ratio, rot, a0:p0, a1:p1});
+      }
+    } else if (e.type==='LWPOLYLINE' || e.type==='LWPOLYLINE_STITCHED'){
+      const closed = e.type==='LWPOLYLINE' ? ((num(e.codes,70,0) & 1)===1) : !!e.closed;
+      const rawPts = e.points;
+      const pts = [];
+      for (let vi=0; vi<rawPts.length; vi++){
+        pts.push(rawPts[vi]);
+        const bulge = e.bulges[vi];
+        const nextPt = rawPts[vi+1] || (closed ? rawPts[0] : null);
+        if (bulge && nextPt){
+          const arcPts = bulgeToArcPoints(rawPts[vi], nextPt, bulge, 12);
+          for (const ap of arcPts) pts.push(ap);
+        }
+      }
+      out.push({layer, kind:'polyline', closed, pts});
+    } else if (e.type==='SPLINE'){
+      out.push({layer, kind:'polyline', closed:false, pts:e.points});
+    } else if (e.type==='HATCH'){
+      if (e.points.length>=3) out.push({layer, kind:'polyline', closed:true, pts:e.points});
+    }
+  }
+  return { entities: out, scaleToMM: insUnitsScale };
+}
+
+// ---- Gerber (RS-274X) parser ----
+function parseGerber(text, filenameLabel){
+  let xInt=2, xDec=4, yInt=2, yDec=4;
+  let gerberUnitScale = 1; // resolved from %MO% directly (mm) or in->mm
+  const apertures = {};
+  let curAperture = null;
+  let curX = 0, curY = 0;
+  let regionMode = false, regionPts = [];
+  let polarity = 'dark';
+  const out = [];
+  const layer = filenameLabel || 'gerber';
+  function coordToUnits(str, intDigits, decDigits){
+    let sign = 1;
+    if (str[0]==='+'){ str = str.slice(1); }
+    else if (str[0]==='-'){ sign=-1; str = str.slice(1); }
+    const total = intDigits+decDigits;
+    str = str.padStart(total, '0');
+    const intPart = str.slice(0, str.length-decDigits) || '0';
+    const decPart = str.slice(str.length-decDigits);
+    return sign*parseFloat(intPart+'.'+decPart);
+  }
+  function flashAperture(x,y){
+    const ap = apertures[curAperture];
+    if (!ap) return;
+    if (ap.shape==='C'){
+      out.push({layer, kind:'circle', cx:x, cy:y, r:ap.params[0]/2});
+    } else if (ap.shape==='R' || ap.shape==='O'){
+      const w=ap.params[0]/2, h=(ap.params[1]!==undefined?ap.params[1]:ap.params[0])/2;
+      out.push({layer, kind:'polyline', closed:true, pts:[{x:x-w,y:y-h},{x:x+w,y:y-h},{x:x+w,y:y+h},{x:x-w,y:y+h}]});
+    }
+  }
+  function drawSegment(x0,y0,x1,y1){
+    const ap = apertures[curAperture];
+    const width = ap ? (ap.params[0]||0.1) : 0.1;
+    if (regionMode) regionPts.push({x:x1,y:y1});
+    else out.push({layer, kind:'polyline', closed:false, pts:[{x:x0,y:y0},{x:x1,y:y1}], thickness:width});
+  }
+  const buf = text;
+  const cmds = [];
+  let i=0;
+  while (i<buf.length){
+    if (buf[i]==='%'){
+      const end = buf.indexOf('%', i+1);
+      if (end<0) break;
+      cmds.push(buf.slice(i, end+1));
+      i = end+1;
+    } else if (buf[i]==='\n' || buf[i]==='\r' || buf[i]===' '){
+      i++;
+    } else {
+      const end = buf.indexOf('*', i);
+      if (end<0) break;
+      cmds.push(buf.slice(i, end+1));
+      i = end+1;
+    }
+  }
+  for (const raw of cmds){
+    const cmd = raw.trim();
+    if (!cmd) continue;
+    if (cmd[0]==='%'){
+      const body = cmd.slice(1, cmd.endsWith('%')?cmd.length-1:cmd.length).replace(/\*$/,'');
+      if (body.indexOf('FS')===0){
+        const m = body.match(/X(\d)(\d)Y(\d)(\d)/);
+        if (m){ xInt=+m[1]; xDec=+m[2]; yInt=+m[3]; yDec=+m[4]; }
+      } else if (body.indexOf('MO')===0){
+        gerberUnitScale = body.indexOf('MM')>=0 ? 1 : 25.4;
+      } else if (body.indexOf('AD')===0){
+        const m = body.match(/^ADD(\d+)([A-Za-z_$][A-Za-z0-9_]*)(?:,(.*))?$/);
+        if (m){
+          const code = 'D'+m[1];
+          const shapeRaw = m[2];
+          const params = (m[3]||'').split('X').map(parseFloat).filter(function(v){return !isNaN(v);});
+          let shape = 'C';
+          if (shapeRaw==='R') shape='R'; else if (shapeRaw==='O') shape='O';
+          apertures[code] = {shape, params: params.length?params:[0.25]};
+        }
+      } else if (body.indexOf('LP')===0){
+        polarity = body[2]==='C' ? 'clear' : 'dark';
+      }
+      continue;
+    }
+    const body = cmd.replace(/\*$/,'');
+    const dMatch = body.match(/D(\d+)$/);
+    const dCode = dMatch ? dMatch[1] : null;
+    const gMatches = body.match(/G(\d+)/g) || [];
+    for (const g of gMatches){
+      const gn = g.slice(1);
+      if (gn==='36'){ regionMode=true; regionPts=[]; }
+      else if (gn==='37'){
+        regionMode=false;
+        if (regionPts.length>=3) out.push({layer, kind:'polyline', closed:true, pts:regionPts, polarity});
+        regionPts=[];
+      }
+    }
+    if (/^D(10|[1-9]\d+)\*?$/.test(body) && !/[XYIJ]/.test(body)){
+      const m = body.match(/D(\d+)/);
+      if (m) curAperture = 'D'+m[1];
+      continue;
+    }
+    const xMatch = body.match(/X(-?\d+)/);
+    const yMatch = body.match(/Y(-?\d+)/);
+    if (xMatch || yMatch || dCode){
+      const nx = xMatch ? coordToUnits(xMatch[1], xInt, xDec) : curX;
+      const ny = yMatch ? coordToUnits(yMatch[1], yInt, yDec) : curY;
+      if (dCode==='01'){ drawSegment(curX,curY,nx,ny); curX=nx; curY=ny; }
+      else if (dCode==='02'){ curX=nx; curY=ny; if (regionMode) regionPts.push({x:curX,y:curY}); }
+      else if (dCode==='03'){ curX=nx; curY=ny; flashAperture(curX,curY); }
+      else if (xMatch || yMatch){ curX=nx; curY=ny; }
+    }
+  }
+  // Gerber coordinates are in the format's native units (mm or inch per %MO%) — apply that
+  // scale here so returned entities are in mm already (unlike SVG/DXF, whose scale is left
+  // to the wizard), since Gerber's unit declaration is unambiguous.
+  if (gerberUnitScale !== 1){
+    for (const e of out){
+      if (e.cx!==undefined){ e.cx*=gerberUnitScale; e.cy*=gerberUnitScale; if(e.r!==undefined)e.r*=gerberUnitScale; }
+      if (e.pts) for (const p of e.pts){ p.x*=gerberUnitScale; p.y*=gerberUnitScale; }
+      if (e.thickness!==undefined) e.thickness*=gerberUnitScale;
+    }
+  }
+  return { entities: out, scaleToMM: 1 };
+}
+
+const CADImportWizard = {
+  state: null,
+  detectFormat(filename){
+    const ext = (filename.split('.').pop()||'').toLowerCase();
+    if (ext==='svg') return 'svg';
+    if (ext==='dxf') return 'dxf';
+    return 'gerber'; // .gbr/.ger/.gtl/.gbl/.gts/.gbs/.gto/.gbo/.txt and unknown extensions
+  },
+  open(){
+    $('cadFileInput').value = '';
+    $('cadFileInput').click();
+  },
+  async handleFiles(fileList){
+    const files = Array.from(fileList);
+    if (!files.length) return;
+    const multi = files.length>1;
+    let allEntities = [];
+    let scaleHint = null;
+    let flipYDefault = false;
+    let formatsSeen = new Set();
+    for (const file of files){
+      const text = await file.text();
+      const format = this.detectFormat(file.name);
+      formatsSeen.add(format);
+      let result;
+      if (format==='svg'){ result = parseSVG(text); flipYDefault = true; }
+      else if (format==='dxf'){ result = parseDXF(text); }
+      else { result = parseGerber(text, file.name.replace(/\.[^.]+$/,'')); }
+      if (scaleHint===null) scaleHint = result.scaleToMM;
+      const baseName = file.name.replace(/\.[^.]+$/,'');
+      for (const e of result.entities){
+        const layerName = format==='gerber' ? baseName : (multi ? (baseName+' / '+e.layer) : e.layer);
+        allEntities.push(Object.assign({}, e, {layer:layerName, _format:format}));
+      }
+    }
+    this.state = {
+      entities: allEntities,
+      scaleToMM: scaleHint || 1,
+      flipY: flipYDefault,
+      formats: Array.from(formatsSeen),
+      layers: {} // name -> {material:'skip'|'pec'|'dielectric', epsR,muR,sigma}
+    };
+    const layerNames = Array.from(new Set(allEntities.map(e=>e.layer)));
+    for (const name of layerNames){
+      this.state.layers[name] = { material:'skip', epsR:1, muR:1, sigma:0 };
+    }
+    this.render();
+    $('cadModalOverlay').style.display='flex';
+  },
+  cancel(){ $('cadModalOverlay').style.display='none'; this.state=null; },
+  layerCount(name){ return this.state.entities.filter(e=>e.layer===name).length; },
+  render(){
+    const st = this.state;
+    const layerNames = Object.keys(st.layers);
+    let html = '';
+    html += '<h2>📐 CAD Import — Layer Mapping</h2>';
+    html += '<div class="modal-sub">Formats detected: '+st.formats.join(', ')+' &middot; '+st.entities.length+' entities across '+layerNames.length+' layer(s). Assign a material to each layer, or leave it as Skip.</div>';
+
+    html += '<div class="wiz-step"><h3><span class="n">1</span>Units &amp; Orientation</h3>';
+    html += '<div class="row3">';
+    html += '<div class="field"><label>Import scale (file units &rarr; mm)</label><input type="number" id="cad_scale" step="any" min="0.0001" value="'+st.scaleToMM+'"></div>';
+    html += '<div class="field" style="display:flex; align-items:flex-end; padding-bottom:8px;"><label class="chk"><input type="checkbox" id="cad_flipy" '+(st.flipY?'checked':'')+'> Flip Y (source is Y-down)</label></div>';
+    html += '</div></div>';
+
+    html += '<div class="wiz-step"><h3><span class="n">2</span>Layers</h3>';
+    html += '<div class="cad-layer-row" style="border-bottom:2px solid var(--violet); font-weight:700; color:var(--mango);">';
+    html += '<div>Layer</div><div>Entities</div><div>Material</div><div>&epsilon;r</div><div>&mu;r</div><div>&sigma;</div><div>PEC</div>';
+    html += '</div>';
+    for (const name of layerNames){
+      const L = st.layers[name];
+      const count = this.layerCount(name);
+      html += '<div class="cad-layer-row" data-layer="'+encodeURIComponent(name)+'">';
+      html += '<div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="'+name+'">'+name+'</div>';
+      html += '<div style="color:var(--dim);">'+count+'</div>';
+      html += '<div><select class="cad_mat_sel">';
+      ['skip','pec','dielectric'].forEach(o=>{
+        html += '<option value="'+o+'" '+(L.material===o?'selected':'')+'>'+(o==='skip'?'Skip':o==='pec'?'PEC':'Dielectric')+'</option>';
+      });
+      html += '</select></div>';
+      html += '<div><input type="number" class="cad_epsR" value="'+L.epsR+'" step="0.01" '+(L.material==='dielectric'?'':'disabled')+'></div>';
+      html += '<div><input type="number" class="cad_muR" value="'+L.muR+'" step="0.01" '+(L.material==='dielectric'?'':'disabled')+'></div>';
+      html += '<div><input type="number" class="cad_sigma" value="'+L.sigma+'" step="0.01" '+(L.material==='dielectric'?'':'disabled')+'></div>';
+      html += '<div style="text-align:center; color:'+(L.material==='pec'?'var(--good)':'var(--dim)')+';">'+(L.material==='pec'?'✓':'—')+'</div>';
+      html += '</div>';
+    }
+    html += '</div>';
+
+    html += '<div class="wiz-step" style="border-bottom:none;"><h3><span class="n">3</span>Limitations</h3>';
+    html += '<div class="hint">v1 import notes: DXF SPLINE entities without fit points are approximated as straight-segment polylines (no full NURBS evaluation); DXF HATCH supports simple polyline-boundary fills only; Gerber polygon/macro apertures are approximated as circles, and clear-polarity (subtractive) regions are imported as ordinary regions rather than true boolean cutouts — review layers using those features before relying on the geometry.</div>';
+    html += '</div>';
+
+    html += '<div class="modal-footer">';
+    html += '<button class="btn" id="cad_cancel">Cancel</button>';
+    html += '<button class="btn mango" id="cad_import">Import '+st.entities.length+' entities</button>';
+    html += '</div>';
+
+    $('cadModalBox').innerHTML = html;
+    this.wireEvents();
+  },
+  wireEvents(){
+    const st = this.state;
+    on($('cad_scale'),'input', ()=>{ st.scaleToMM = parseFloat($('cad_scale').value)||1; });
+    on($('cad_flipy'),'change', ()=>{ st.flipY = $('cad_flipy').checked; });
+    document.querySelectorAll('.cad-layer-row[data-layer]').forEach(row=>{
+      const name = decodeURIComponent(row.dataset.layer);
+      const L = st.layers[name];
+      const sel = row.querySelector('.cad_mat_sel');
+      const epsInp = row.querySelector('.cad_epsR'), muInp = row.querySelector('.cad_muR'), sigInp = row.querySelector('.cad_sigma');
+      on(sel,'change', ()=>{ L.material = sel.value; this.render(); });
+      on(epsInp,'input', ()=>{ L.epsR = parseFloat(epsInp.value)||1; });
+      on(muInp,'input', ()=>{ L.muR = parseFloat(muInp.value)||1; });
+      on(sigInp,'input', ()=>{ L.sigma = parseFloat(sigInp.value)||0; });
+    });
+    on($('cad_cancel'),'click', ()=> this.cancel());
+    on($('cad_import'),'click', ()=> this.doImport());
+  },
+  doImport(){
+    const st = this.state;
+    const scale = st.scaleToMM||1, flipY = st.flipY;
+    function tp(p){ return { x: p.x*scale, y: (flipY? -p.y : p.y)*scale }; }
+    let imported = 0;
+    for (const e of st.entities){
+      const L = st.layers[e.layer];
+      if (!L || L.material==='skip') continue;
+      const matProps = L.material==='pec'
+        ? { epsR:1, muR:1, sigma:0, pec:true }
+        : { epsR:L.epsR, muR:L.muR, sigma:L.sigma, pec:false };
+      const base = Object.assign({ id: uid(), label: e.layer }, matProps);
+      let obj = null;
+      if (e.kind==='circle'){
+        const c = tp({x:e.cx,y:e.cy});
+        obj = Object.assign(base, { type:'circle', cx:c.x, cy:c.y, r: Math.abs(e.r*scale) });
+      } else if (e.kind==='ellipse'){
+        const c = tp({x:e.cx,y:e.cy});
+        obj = Object.assign(base, { type:'ellipse', cx:c.x, cy:c.y, rx: Math.abs(e.rx*scale), ry: Math.abs(e.ry*scale) });
+      } else if (e.kind==='arc' || e.kind==='earc'){
+        const c = tp({x:e.cx,y:e.cy});
+        let a0=e.a0, a1=e.a1;
+        if (flipY){ const t=-a1; a1=-a0; a0=t; }
+        if (e.kind==='arc'){
+          obj = Object.assign(base, { type:'arc', cx:c.x, cy:c.y, r: Math.abs(e.r*scale), a0, a1, thickness:2 });
+        } else {
+          obj = Object.assign(base, { type:'earc', cx:c.x, cy:c.y, rx: Math.abs(e.rx*scale), ry: Math.abs(e.ry*scale), a0, a1, thickness:2 });
+        }
+      } else if (e.kind==='polyline'){
+        const pts = e.pts.map(tp);
+        if (e.closed){
+          obj = Object.assign(base, { type:'polygon', points: pts });
+        } else if (pts.length===2){
+          obj = Object.assign(base, { type:'line', x1:pts[0].x, y1:pts[0].y, x2:pts[1].x, y2:pts[1].y, thickness: Math.max((e.thickness||1)*scale, 0.05) });
+        } else {
+          obj = Object.assign(base, { type:'spline', points: pts, thickness: Math.max((e.thickness||1)*scale, 0.05) });
+        }
+      }
+      if (obj){ App.project.materials.push(obj); imported++; }
+    }
+    $('cadModalOverlay').style.display='none';
+    this.state = null;
+    App.selectedId = null;
+    renderLists(); fitView(); drawGeoCanvas();
+  }
+};
+on($('cadModalOverlay'),'click', (e)=>{ if (e.target.id==='cadModalOverlay') CADImportWizard.cancel(); });
+on($('importCadBtn'),'click', ()=> CADImportWizard.open());
+on($('cadFileInput'),'change', (e)=>{ CADImportWizard.handleFiles(e.target.files); });
+
 function wireToolbar(toolbarIds, hintId){
   const toolbars = Array.isArray(toolbarIds) ? toolbarIds : [toolbarIds];
   toolbars.forEach(tid=>{
@@ -1514,7 +2274,8 @@ const MATERIAL_FIELDS = {
   parc:[['vx','Vertex X'],['vy','Vertex Y'],['fx','Focus X'],['fy','Focus Y'],['height','Height (mm)'],['thickness','Thickness (mm)']],
   spline:[],
   func:[['expr','y = f(x)'],['xmin','X min'],['xmax','X max'],['yoff','Y offset'],['thickness','Thickness (mm)']],
-  lens:[['cx','Cx'],['cy','Cy'],['rotationDeg','Rotation °'],['span','Span (mm)'],['centerThickness','Center thickness (mm)'],['leftR','Left R (mm)'],['rightR','Right R (mm)']]
+  lens:[['cx','Cx'],['cy','Cy'],['rotationDeg','Rotation °'],['span','Span (mm)'],['centerThickness','Center thickness (mm)'],['leftR','Left R (mm)'],['rightR','Right R (mm)']],
+  polygon:[]
 };
 function renderLists(){
   $('matCount').textContent = App.project.materials.length;
@@ -1571,6 +2332,11 @@ function materialCard(m){
     const note=document.createElement('div'); note.className='hint'; note.textContent=`${m.points.length} control points. Re-draw with the Spline tool to replace.`;
     body.appendChild(note);
     body.appendChild(makeNumInput(m,'thickness','Thickness (mm)',()=>drawGeoCanvas()));
+  }
+  if (m.type==='polygon'){
+    const note=document.createElement('div'); note.className='hint';
+    note.textContent = `${m.points.length} vertices (imported closed region). Re-import to replace the outline.`;
+    body.appendChild(note);
   }
   if (m.type==='lens'){
     const typeGrid=document.createElement('div'); typeGrid.className='row2'; typeGrid.style.marginTop='6px';
@@ -1847,6 +2613,16 @@ function materialInsideCell(m, x, y){
       const rightU = lensSurfaceU(v, u1, m.rightR, m.rightType, false);
       if (leftU===null || rightU===null) return false;
       return u >= leftU && u <= rightU;
+    }
+    case 'polygon': {
+      const pts = m.points;
+      let inside = false;
+      for (let pi=0, pj=pts.length-1; pi<pts.length; pj=pi++){
+        const xi=pts[pi].x, yi=pts[pi].y, xj=pts[pj].x, yj=pts[pj].y;
+        const intersect = ((yi>y)!==(yj>y)) && (x < (xj-xi)*(y-yi)/(yj-yi)+xi);
+        if (intersect) inside = !inside;
+      }
+      return inside;
     }
   }
   return false;
@@ -2660,6 +3436,9 @@ function materialOutlinePoints(m){
     case 'lens': {
       const local = lensLocalOutline(m, 40);
       return {closed:true, pts: local.map(p=>lensWorldPoint(m,p.u,p.v))};
+    }
+    case 'polygon': {
+      return {closed:true, pts: m.points};
     }
   }
   return {closed:false, pts:[]};
