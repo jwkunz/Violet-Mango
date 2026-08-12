@@ -309,8 +309,12 @@ label.chk{display:flex; align-items:center; gap:6px; font-size:12px; color:var(-
           <div class="field"><label>Max cycles</label><input type="number" id="p_maxcycles" value="30" min="1"></div>
           <div class="field"><label>Steps / cycle (auto)</label><input type="number" id="p_stepspercycle" value="" disabled></div>
         </div>
-        <div class="field"><label>Convergence threshold (ΔA/A)</label><input type="number" id="p_conv" value="0.001" step="0.0001"></div>
+        <div class="row2">
+          <div class="field"><label>Convergence threshold (&Delta;U/U)</label><input type="number" id="p_conv" value="0.001" step="0.0001"></div>
+          <div class="field"><label>Convergence window (cycles)</label><input type="number" id="p_convWindow" value="5" min="2" step="1"></div>
+        </div>
         <label class="chk"><input type="checkbox" id="p_convEnable" checked> Enable early stop on convergence</label>
+        <div class="hint">Convergence is judged from the total EM energy across the whole domain, cycle-averaged. It only triggers once that energy has stayed within the threshold for the full window of consecutive cycles — not just one lucky step — to avoid false stops from a noisy single-point probe.</div>
 
         <h3 class="section">Far-Field Transform</h3>
         <div class="field"><label>Huygens surface margin (cells inside PML)</label><input type="number" id="p_ffmargin" value="4" min="1"></div>
@@ -504,7 +508,7 @@ Cb = (dt/&epsilon;) / (1 + &sigma;&middot;dt / 2&epsilon;)</div>
         <p>The domain edges use a graded-conductivity absorbing layer: a polynomial-profile loss term &sigma;(depth) is added to the update coefficients within the PML region (matched between electric and magnetic loss so the layer is approximately impedance-matched to free space), ramping from 0 at the PML's inner edge to a maximum value at the outer domain boundary. This is a simplified, single-field approximation of a full Convolutional PML — effective at absorbing outgoing waves with modest reflection, though not as reflection-free as a split-field CPML implementation.</p>
 
         <h3>4. Excitation &amp; Steady State</h3>
-        <p>All sources are single-frequency, continuous-wave (CW) sinusoids. The solver time-steps cycle by cycle, tracking the peak field amplitude at a monitor point each cycle. It stops early once the cycle-over-cycle amplitude change falls below the convergence threshold (if enabled), or after the configured maximum number of cycles. Once stopped, it runs one additional full period, during which it:</p>
+        <p>All sources are single-frequency, continuous-wave (CW) sinusoids. The solver time-steps cycle by cycle, tracking the total electromagnetic energy across the <b>entire domain</b> (cycle-averaged, to cancel out the drive frequency's own oscillation) rather than a single probe point — a single point can sit near a field null and either look falsely settled or stay noisy indefinitely even once the overall solution has genuinely reached steady state. Convergence only triggers once that domain-energy metric has stayed within the convergence threshold across a full window of <i>consecutive</i> cycles (default 5, configurable), not just one favorable step — this avoids the false stops (and the never-quite-settling noise) that a single-point, single-step comparison is prone to. Otherwise it runs until the configured maximum number of cycles. Once stopped, it runs one additional full period, during which it:</p>
         <ul>
           <li>Records field snapshots (for the time-history playback / animation), and</li>
           <li>Accumulates a running discrete Fourier transform (DFT) at the excitation frequency, to extract the steady-state complex phasor fields (Ex, Ey, Ez, Hx, Hy, Hz) used for all "steady-state phasor" visualizations and the far-field transform.</li>
@@ -633,7 +637,7 @@ const Z0 = 376.730313668;
 
 // Single source of truth for the app version — read by the header badge,
 // the Legal tab, and stamped into every exported results/project JSON file.
-const APP_VERSION = '1.3.0';
+const APP_VERSION = '1.4.0';
 
 /* ---------------------------- 1. STATE ---------------------------- */
 const App = {
@@ -641,7 +645,7 @@ const App = {
   tool: 'select',
   project: {
     grid: { freqGHz: 2.4, domainW: 200, domainH: 200, cellsPerWL: 20, planeZ: 0, centerX: 0, centerY: 0 },
-    solver: { pmlCells: 12, pmlM: 3, cfl: 0.98, maxCycles: 30, convThresh: 0.001, convEnable: true, ffMargin: 4, ffResDeg: 1 },
+    solver: { pmlCells: 12, pmlM: 3, cfl: 0.98, maxCycles: 30, convThresh: 0.001, convWindow: 5, convEnable: true, ffMargin: 4, ffResDeg: 1 },
     materials: [],
     sources: []
   },
@@ -716,7 +720,7 @@ document.querySelectorAll('nav.tabs button').forEach(btn=>{
     updateGridSummary(); fitView(); drawGeoCanvas();
   });
 });
-['p_pml','p_pmlm','p_cfl','p_maxcycles','p_conv','p_convEnable','p_ffmargin','p_ffres'].forEach(id=>{
+['p_pml','p_pmlm','p_cfl','p_maxcycles','p_conv','p_convWindow','p_convEnable','p_ffmargin','p_ffres'].forEach(id=>{
   on($(id), $(id).type==='checkbox' ? 'change':'input', ()=>{
     const s = App.project.solver;
     s.pmlCells = parseInt($('p_pml').value)||12;
@@ -724,6 +728,7 @@ document.querySelectorAll('nav.tabs button').forEach(btn=>{
     s.cfl = parseFloat($('p_cfl').value)||0.98;
     s.maxCycles = parseInt($('p_maxcycles').value)||30;
     s.convThresh = parseFloat($('p_conv').value)||0.001;
+    s.convWindow = Math.max(2, parseInt($('p_convWindow').value)||5);
     s.convEnable = $('p_convEnable').checked;
     s.ffMargin = parseInt($('p_ffmargin').value)||4;
     s.ffResDeg = parseFloat($('p_ffres').value)||1;
@@ -2039,11 +2044,17 @@ function main(project, gd){
   const maxCycles = project.solver.maxCycles;
   const convThresh = project.solver.convThresh;
   const convEnable = project.solver.convEnable;
+  const convWindow = Math.max(2, Math.round(project.solver.convWindow||5));
 
-  // monitor point: center of domain
-  const monI = Math.floor(Nx/2), monJ = Math.floor(Ny/2);
-  let lastCyclePeak = 0, converged = false, cycle = 0, step = 0;
-  let cyclePeak = 0;
+  // Convergence is judged from the total EM energy in the whole domain (cycle-averaged,
+  // to cancel out the CW oscillation itself), not a single probe point — a single point can
+  // sit near a field null/node and look falsely "settled" or stay noisy indefinitely even
+  // once the overall solution has truly reached steady state. We also require the energy to
+  // stay within the threshold across 'convWindow' *consecutive* cycles (not just two), so a
+  // lucky single small step doesn't trigger a false stop.
+  let converged = false, cycle = 0, step = 0;
+  let cycleEnergyAccum = 0, cycleStepCount = 0;
+  const energyHistory = [];
 
   // allow one extra cycle beyond the cap so the triggered recording period can actually run
   const maxSteps = stepsPerCycle*(maxCycles+1);
@@ -2142,17 +2153,38 @@ function main(project, gd){
       if (localStep >= stepsPerCycle-1) break; // recorded one full period
     }
 
-    const av = Math.abs(Ez[idx(monI,monJ)]);
-    if (av>cyclePeak) cyclePeak = av;
+    if (!recording){
+      // accumulate total domain EM energy (proportional — the eps0/mu0/cell-volume constants
+      // are omitted since only the *relative* stability of this metric matters here)
+      let e = 0;
+      for (let n=0;n<N;n++){
+        e += epsR[n]*(Ex[n]*Ex[n]+Ey[n]*Ey[n]+Ez[n]*Ez[n]) + muR[n]*(Hx[n]*Hx[n]+Hy[n]*Hy[n]+Hz[n]*Hz[n]);
+      }
+      cycleEnergyAccum += e;
+      cycleStepCount++;
+    }
 
     if (!recording && (step+1) % stepsPerCycle === 0){
       cycle++;
-      const denom = Math.max(lastCyclePeak, 1e-30);
-      const conv = Math.abs(cyclePeak-lastCyclePeak)/denom;
-      const elapsed = (Date.now()-t0report)/1000;
-      postMessage({type:'progress', cycle, maxCycles, step, conv: cycle>1?conv:null, log: cycle===1?null:('Cycle '+cycle+': peak |Ez| at monitor = '+cyclePeak.toExponential(3)+', ΔA/A = '+conv.toExponential(3))});
-      if (cycle>1 && convEnable && conv < convThresh){
-        postMessage({type:'progress', cycle, maxCycles, step, conv, log:'\u2713 Converged after '+cycle+' cycles — recording final period for phasor extraction.'});
+      const cycleAvgEnergy = cycleEnergyAccum / Math.max(cycleStepCount,1);
+      energyHistory.push(cycleAvgEnergy);
+      if (energyHistory.length > convWindow) energyHistory.shift();
+
+      let conv = null;
+      if (energyHistory.length >= convWindow){
+        let wmin=Infinity, wmax=-Infinity, wsum=0;
+        for (const v of energyHistory){ if(v<wmin)wmin=v; if(v>wmax)wmax=v; wsum+=v; }
+        const wmean = wsum/energyHistory.length;
+        conv = wmean>1e-30 ? (wmax-wmin)/wmean : 0;
+      }
+
+      const convLog = conv!==null
+        ? ('Cycle '+cycle+': avg domain energy = '+cycleAvgEnergy.toExponential(3)+', stability over last '+convWindow+' cycles (\u0394U/U) = '+conv.toExponential(3))
+        : ('Cycle '+cycle+': avg domain energy = '+cycleAvgEnergy.toExponential(3)+' (building history: '+energyHistory.length+'/'+convWindow+')');
+      postMessage({type:'progress', cycle, maxCycles, step, conv, log: convLog});
+
+      if (conv!==null && convEnable && conv < convThresh){
+        postMessage({type:'progress', cycle, maxCycles, step, conv, log:'\u2713 Converged — total domain energy stable within '+(convThresh*100).toFixed(3)+'% over the last '+convWindow+' consecutive cycles. Recording final period for phasor extraction.'});
         recording = true; recordStepStart = step+1;
         ExR=new Float32Array(N);ExI=new Float32Array(N);EyR=new Float32Array(N);EyI=new Float32Array(N);EzR=new Float32Array(N);EzI=new Float32Array(N);
         HxR=new Float32Array(N);HxI=new Float32Array(N);HyR=new Float32Array(N);HyI=new Float32Array(N);HzR=new Float32Array(N);HzI=new Float32Array(N);
@@ -2162,7 +2194,7 @@ function main(project, gd){
         ExR=new Float32Array(N);ExI=new Float32Array(N);EyR=new Float32Array(N);EyI=new Float32Array(N);EzR=new Float32Array(N);EzI=new Float32Array(N);
         HxR=new Float32Array(N);HxI=new Float32Array(N);HyR=new Float32Array(N);HyI=new Float32Array(N);HzR=new Float32Array(N);HzI=new Float32Array(N);
       }
-      lastCyclePeak = cyclePeak; cyclePeak = 0;
+      cycleEnergyAccum = 0; cycleStepCount = 0;
     }
   }
   if (!ExR){ // never converged / no recording triggered (very short run) — record last period anyway
@@ -2785,7 +2817,7 @@ function syncFormsFromProject(){
   $('p_freq').value=g.freqGHz; $('p_w').value=g.domainW; $('p_h').value=g.domainH; $('p_cpw').value=g.cellsPerWL; $('p_z').value=g.planeZ;
   $('p_cx').value=g.centerX||0; $('p_cy').value=g.centerY||0;
   $('p_pml').value=s.pmlCells; $('p_pmlm').value=s.pmlM; $('p_cfl').value=s.cfl; $('p_maxcycles').value=s.maxCycles;
-  $('p_conv').value=s.convThresh; $('p_convEnable').checked=s.convEnable; $('p_ffmargin').value=s.ffMargin; $('p_ffres').value=s.ffResDeg;
+  $('p_conv').value=s.convThresh; $('p_convWindow').value=s.convWindow||5; $('p_convEnable').checked=s.convEnable; $('p_ffmargin').value=s.ffMargin; $('p_ffres').value=s.ffResDeg;
   updateGridSummary();
 }
 
