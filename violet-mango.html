@@ -456,6 +456,12 @@ label.chk{display:flex; align-items:center; gap:6px; font-size:12px; color:var(-
           <input type="file" id="loadProjectInput" accept="application/json" style="display:none;">
           <button class="btn" id="loadProjectBtn">Choose file…</button>
         </div>
+        <div class="expcard">
+          <h4>🎞️ Export Playback GIF</h4>
+          <p>Animates the recorded time-history frames using the field, colormap, scale, and coordinate system currently selected in the Visualize tab (uses the currently-shown min/max range, held fixed across all frames so the colors don't jitter). Overlays are not included.</p>
+          <div class="field" style="margin-bottom:12px;"><label>Frame delay (ms)</label><input type="number" id="gifDelay" value="60" min="20" step="10"></div>
+          <button class="btn mango" id="exportGifBtn" disabled>Download playback.gif</button>
+        </div>
       </div>
     </section>
 
@@ -637,7 +643,7 @@ const Z0 = 376.730313668;
 
 // Single source of truth for the app version — read by the header badge,
 // the Legal tab, and stamped into every exported results/project JSON file.
-const APP_VERSION = '1.4.0';
+const APP_VERSION = '1.5.0';
 
 /* ---------------------------- 1. STATE ---------------------------- */
 const App = {
@@ -1735,6 +1741,7 @@ function finishRun(success){
     $('runStatus').textContent='complete'; $('runStatus').style.color='var(--good)';
     log('✔ Simulation complete. Switch to Visualize to inspect fields.');
     $('exportResultsBtn').disabled=false;
+    $('exportGifBtn').disabled = !(App.results.frames && App.results.frames.length>0);
     setupPlayback();
     drawVizCanvas();
   } else {
@@ -2777,6 +2784,160 @@ function downloadJSON(obj, filename){
   a.href = URL.createObjectURL(blob); a.download = filename;
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
 }
+
+/* ----- Minimal dependency-free GIF89a encoder (palette-based, LZW-compressed) -----
+   Implemented directly from the GIF89a spec so the app has zero external dependencies.
+   Used only for the playback-animation export below. */
+function gifByteWriter(){
+  const bytes = [];
+  return {
+    bytes,
+    u8(v){ bytes.push(v & 0xFF); },
+    u16(v){ bytes.push(v & 0xFF, (v>>8) & 0xFF); },
+    bytesArr(arr){ for (let i=0;i<arr.length;i++) bytes.push(arr[i] & 0xFF); },
+    str(s){ for (let i=0;i<s.length;i++) bytes.push(s.charCodeAt(i)); }
+  };
+}
+// LZW-encodes one frame's palette-index pixels (0..255) into GIF sub-blocks (<=255 bytes each).
+function gifLZWEncode(indices, minCodeSize){
+  const clearCode = 1 << minCodeSize;
+  const eoiCode = clearCode + 1;
+  const out = [];
+  let bitBuf = 0, bitCount = 0;
+  function emitBits(code, size){
+    bitBuf |= (code << bitCount);
+    bitCount += size;
+    while (bitCount >= 8){
+      out.push(bitBuf & 0xFF);
+      bitBuf >>>= 8;
+      bitCount -= 8;
+    }
+  }
+  function flushBits(){
+    if (bitCount > 0){ out.push(bitBuf & 0xFF); bitBuf=0; bitCount=0; }
+  }
+  let dict, nextCode, codeSize;
+  function resetDict(){
+    dict = new Map();
+    for (let i=0;i<clearCode;i++) dict.set(String.fromCharCode(i), i);
+    nextCode = eoiCode + 1;
+    codeSize = minCodeSize + 1;
+  }
+  resetDict();
+  emitBits(clearCode, codeSize);
+  let w = String.fromCharCode(indices[0]);
+  for (let p=1; p<indices.length; p++){
+    const k = String.fromCharCode(indices[p]);
+    const wk = w + k;
+    if (dict.has(wk)){
+      w = wk;
+    } else {
+      emitBits(dict.get(w), codeSize);
+      if (nextCode < 4096){
+        dict.set(wk, nextCode);
+        nextCode++;
+        // Note: growth is checked against (nextCode-1), one code later than the naive
+        // nextCode>=threshold rule, to match how a standards-compliant GIF decoder's own
+        // dictionary trails the encoder's by exactly one entry (the decoder can't add its
+        // Nth entry until it has read the encoder's (N+1)th emitted code) — verified against
+        // an independent decoder implementation and a real libvips/sharp GIF decode.
+        if ((nextCode-1) >= (1 << codeSize) && codeSize < 12) codeSize++;
+      } else {
+        emitBits(clearCode, codeSize);
+        resetDict();
+      }
+      w = k;
+    }
+  }
+  emitBits(dict.get(w), codeSize);
+  emitBits(eoiCode, codeSize);
+  flushBits();
+  const subBlocks = [];
+  for (let i=0;i<out.length;i+=255) subBlocks.push(out.slice(i, i+255));
+  return { subBlocks };
+}
+// Renders every recorded time-history frame — using the field/function/coordinate-system/
+// colormap/scale currently selected in the Visualize tab, with a single fixed min/max range
+// held across all frames — into an animated GIF Blob.
+function renderPlaybackGif(){
+  const res = App.results;
+  if (!res || !res.frames || !res.frames.length) throw new Error('No time-history frames to export — run a simulation first.');
+  const field = $('v_field').value;
+  const func = $('v_func').disabled ? 'abs' : $('v_func').value;
+  const coordSys = $('v_coord').value;
+  const cmapName = $('v_cmap').value;
+  const scaleType = $('v_scale').value;
+  const stops = COLORMAPS[cmapName] || COLORMAPS.viridis;
+  const delayMs = Math.max(20, parseInt($('gifDelay').value)||60);
+  const delayCs = Math.max(2, Math.round(delayMs/10));
+
+  let mn = parseFloat($('v_min').value), mx = parseFloat($('v_max').value);
+  if (!(mx>mn)) mx = mn + 1e-9;
+
+  const palette = [];
+  for (let k=0;k<256;k++) palette.push(lerpColor(stops, k/255));
+
+  const Nx=res.Nx, Ny=res.Ny;
+  const w = gifByteWriter();
+  w.str('GIF89a');
+  w.u16(Nx); w.u16(Ny);
+  w.u8(0xF7); // global color table, 256 entries
+  w.u8(0); w.u8(0);
+  for (let k=0;k<256;k++){ const [r,g,b]=palette[k]; w.u8(Math.round(r)); w.u8(Math.round(g)); w.u8(Math.round(b)); }
+  // Netscape looping extension — loop forever
+  w.u8(0x21); w.u8(0xFF); w.u8(0x0B); w.str('NETSCAPE2.0'); w.u8(0x03); w.u8(0x01); w.u16(0); w.u8(0x00);
+
+  for (const frame of res.frames){
+    const arr = computeFieldArray(res, field, func, frame, coordSys);
+    let disp = arr;
+    if (scaleType==='log'){ disp = arr.map(v=>Math.log10(Math.max(Math.abs(v),1e-12))); }
+    else if (scaleType==='db'){ disp = arr.map(v=>20*Math.log10(Math.max(Math.abs(v),1e-12))); }
+
+    const indices = new Uint8Array(Nx*Ny);
+    for (let i=0;i<Nx;i++){
+      for (let j=0;j<Ny;j++){
+        const v = disp[i*Ny+j];
+        const t = clamp((v-mn)/(mx-mn), 0, 1);
+        const gifRow = Ny-1-j; // flip so +y renders at the top, matching the live Visualize view
+        indices[gifRow*Nx+i] = Math.round(t*255);
+      }
+    }
+
+    w.u8(0x21); w.u8(0xF9); w.u8(0x04); // graphic control extension
+    w.u8(0x04); // disposal: do not dispose; no transparency
+    w.u16(delayCs);
+    w.u8(0); w.u8(0x00);
+    w.u8(0x2C); // image descriptor
+    w.u16(0); w.u16(0); w.u16(Nx); w.u16(Ny);
+    w.u8(0x00);
+    const minCodeSize = 8;
+    w.u8(minCodeSize);
+    const {subBlocks} = gifLZWEncode(indices, minCodeSize);
+    for (const block of subBlocks){ w.u8(block.length); w.bytesArr(block); }
+    w.u8(0x00);
+  }
+  w.u8(0x3B); // trailer
+
+  return new Blob([new Uint8Array(w.bytes)], {type:'image/gif'});
+}
+on($('exportGifBtn'),'click', ()=>{
+  if (!App.results || !App.results.frames || !App.results.frames.length) return;
+  const btn = $('exportGifBtn');
+  btn.disabled = true; const origLabel = btn.textContent; btn.textContent = 'Encoding…';
+  setTimeout(()=>{
+    try{
+      const blob = renderPlaybackGif();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob); a.download = 'violet-mango-playback.gif';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    } catch(e){
+      alert('GIF export failed: '+e.message);
+    } finally {
+      btn.disabled = false; btn.textContent = origLabel;
+    }
+  }, 30);
+});
+
 on($('exportResultsBtn'),'click', ()=>{
   if (!App.results) return;
   const ff = App.results.farField;
