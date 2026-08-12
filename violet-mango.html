@@ -411,8 +411,13 @@ label.chk{display:flex; align-items:center; gap:6px; font-size:12px; color:var(-
           </select>
         </div>
         <label class="chk" style="margin-bottom:9px;"><input type="checkbox" id="v_auto" checked> Auto range</label>
-        <label class="chk" style="margin-bottom:9px;"><input type="checkbox" id="v_overlay"> Overlay far-field pattern</label>
-        <label class="chk" style="margin-bottom:9px;"><input type="checkbox" id="v_geo" checked> Show geometry outline</label>
+        <div class="field" style="min-width:190px; background:var(--panel2); border:1px solid var(--violet-dim); border-radius:8px; padding:7px 10px;">
+          <label style="color:var(--mango);">Overlays</label>
+          <div style="display:flex; flex-direction:column; gap:5px; margin-top:2px;">
+            <label class="chk"><input type="checkbox" id="v_geo" checked> Geometry outline</label>
+            <label class="chk"><input type="checkbox" id="v_overlay"> Far-field polar pattern</label>
+          </div>
+        </div>
         <div class="spacer"></div>
         <button class="btn" id="v_polarBtn">Show Polar Pattern</button>
       </div>
@@ -2503,11 +2508,79 @@ function drawVizCanvas(){
     drawPolarOverlay(ctx, res.farField, dx0+dw/2, dy0+dh/2, Math.min(dw,dh)/2*0.8, $('v_ffproc').value);
   }
 
+  // coordinate-system axis indicator, bottom-left corner of the simulation box
+  drawCoordAxisIndicator(ctx, res, coordSys, dx0, dy0, dw, dh);
+
   // colorbar
   $('colorbar').style.background = colormapCSS(cmapName);
   $('colorbarLabel').children[0].textContent = fmt(mx,3);
   $('colorbarLabel').children[1].textContent = fmt((mx+mn)/2,3);
   $('colorbarLabel').children[2].textContent = fmt(mn,3);
+}
+// Small compass-style glyph in the bottom-left corner of the rendered simulation box,
+// showing how the current visualization coordinate system's basis directions map onto
+// the screen at that point. For cylindrical/spherical, the basis rotates with position
+// (referenced from the world origin), so it's evaluated at the corner's own world location.
+function drawCoordAxisIndicator(ctx, res, coordSys, dx0, dy0, dw, dh){
+  const pad = 48;
+  const ax = dx0 + pad, ay = dy0 + dh - pad;
+  const s = dw / res.Nx;
+  const i = (ax-dx0)/s, j = (dy0+dh-ay)/s;
+  const wx = res.originX + (i-res.pml)*res.dx;
+  const wy = res.originY + (j-res.pml)*res.dx;
+  const planeZ = App.project.grid.planeZ||0;
+  const arrowLen = 24;
+
+  function toScreenDir(dxw, dyw){
+    const len = Math.hypot(dxw,dyw);
+    if (len < 1e-9) return [0,0];
+    return [dxw/len, -dyw/len]; // world -> screen (y flipped), same convention as w2s
+  }
+  function drawArrow(dir, color, label){
+    const [ux,uy] = dir;
+    if (ux===0 && uy===0){ return; } // degenerate (e.g. on-axis) — nothing meaningful to draw
+    const x2 = ax+ux*arrowLen, y2 = ay+uy*arrowLen;
+    ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(x2,y2); ctx.stroke();
+    const ang = Math.atan2(y2-ay, x2-ax);
+    ctx.beginPath();
+    ctx.moveTo(x2,y2);
+    ctx.lineTo(x2-7*Math.cos(ang-0.4), y2-7*Math.sin(ang-0.4));
+    ctx.lineTo(x2-7*Math.cos(ang+0.4), y2-7*Math.sin(ang+0.4));
+    ctx.closePath(); ctx.fill();
+    ctx.font='11px sans-serif';
+    ctx.fillText(label, x2+ux*13-4, y2-uy*13+4);
+  }
+  function drawZDot(){
+    ctx.strokeStyle='#9b6bff'; ctx.fillStyle='#9b6bff';
+    ctx.beginPath(); ctx.arc(ax,ay,3.5,0,2*Math.PI); ctx.fill();
+    ctx.beginPath(); ctx.arc(ax,ay,7.5,0,2*Math.PI); ctx.stroke();
+    ctx.font='11px sans-serif'; ctx.fillText('z', ax+12, ay-11);
+  }
+
+  ctx.save();
+  ctx.fillStyle='rgba(11,12,16,0.55)';
+  ctx.beginPath(); ctx.arc(ax,ay, arrowLen+22, 0, 2*Math.PI); ctx.fill();
+
+  if (coordSys==='cartesian'){
+    drawArrow([1,0], '#ff6b6b', 'x');
+    drawArrow([0,1], '#5ed6a8', 'y');
+    drawZDot();
+  } else if (coordSys==='cylindrical'){
+    const phi = Math.atan2(wy,wx);
+    drawArrow(toScreenDir(Math.cos(phi), Math.sin(phi)), '#ff6b6b', 'ρ');
+    drawArrow(toScreenDir(-Math.sin(phi), Math.cos(phi)), '#5ed6a8', 'φ');
+    drawZDot();
+  } else { // spherical
+    const phi = Math.atan2(wy,wx);
+    const rxy = Math.hypot(wx,wy);
+    const theta = Math.atan2(rxy, planeZ);
+    const sinT=Math.sin(theta), cosT=Math.cos(theta), cosP=Math.cos(phi), sinP=Math.sin(phi);
+    drawArrow(toScreenDir(sinT*cosP, sinT*sinP), '#ff6b6b', 'r');
+    drawArrow(toScreenDir(cosT*cosP, cosT*sinP), '#ffab3d', 'θ');
+    drawArrow(toScreenDir(-sinP, cosP), '#5ed6a8', 'φ');
+  }
+  ctx.restore();
 }
 // Sample any material primitive down to a polyline (or polygon) in world (mm) coordinates,
 // for use by the Visualize-tab geometry overlay (reuses the same curve math as drawMaterial()).
